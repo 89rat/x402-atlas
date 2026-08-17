@@ -55,6 +55,9 @@
       }
     ]
   },
+  "routes": [
+    { "pattern": "atlas.code402.dev", "custom_domain": true }
+  ],
   "triggers": {
     "crons": ["0 * * * *"]
   }
