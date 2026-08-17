@@ -2,6 +2,7 @@
 import type { Env, QueueMessage } from "./lib/types";
 import { ensureSeeds, ingestService, runProbe } from "./ingest/pipeline";
 import { search } from "./api/search";
+import { planPurchase, PlanInput } from "./api/policy";
 import { handleMcp } from "./mcp/server";
 
 const json = (data: unknown, status = 200) =>
@@ -79,6 +80,15 @@ export default {
         ...hits.map((h) => `- [${h.title}](${h.baseUrl}${h.endpointPath}): $${h.priceMin ?? "?"}/call — ${h.description}`),
       ].join("\n");
       return new Response(body, { headers: { "content-type": "text/plain" } });
+    }
+
+    if (path === "/v1/plan") {
+      const body = await req.json<Record<string, unknown>>();
+      const parsed = PlanInput.safeParse(body);
+      if (!parsed.success) {
+        return json({ error: "INVALID_INPUT", issues: parsed.error.issues }, 400);
+      }
+      return json(await planPurchase(env, parsed.data));
     }
 
     // Admin: run pipeline inline (ops/testing — protects with ADMIN_TOKEN if set)

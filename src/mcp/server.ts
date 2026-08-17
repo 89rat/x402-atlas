@@ -26,6 +26,22 @@ const TOOLS = [
     },
   },
   {
+    name: "plan_purchase",
+    description:
+      "Deterministic purchase gate. Given an x402 endpoint URL and the buyer's budget/ceiling policy, returns ACCEPT / REJECT / ESCALATE with a policy checklist (alive, price, uptime, budget). LLMs may propose; this engine decides. Call this BEFORE paying any x402 endpoint.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        endpoint_url: { type: "string", description: "Full URL of the payable endpoint" },
+        budget_usd: { type: "number", description: "Total remaining budget in USD" },
+        price_ceiling_usd: { type: "number", description: "Max acceptable price per call" },
+        escalation_threshold_usd: { type: "number", description: "Above this price, ESCALATE to human (default 1)" },
+        min_uptime: { type: "number", description: "Min 7d uptime fraction 0-1 (default 0.9)" },
+      },
+      required: ["endpoint_url"],
+    },
+  },
+  {
     name: "get_ecosystem_stats",
     description: "Aggregate stats over the indexed x402 economy: service count, alive rate, median/min prices.",
     inputSchema: { type: "object", properties: {} },
@@ -73,6 +89,20 @@ export async function handleMcp(env: Env, req: Request): Promise<Response> {
               )
               .join("\n");
       return reply({ content: [{ type: "text", text }] });
+    }
+    if (name === "plan_purchase") {
+      const { planPurchase, PlanInput: PI } = await import("../api/policy");
+      const parsed = PI.safeParse(args);
+      if (!parsed.success) {
+        return reply({ content: [{ type: "text", text: `INVALID_INPUT: ${JSON.stringify(parsed.error.issues)}` }] });
+      }
+      const d = await planPurchase(env, parsed.data);
+      return reply({
+        content: [{
+          type: "text",
+          text: `${d.decision} (${d.reason_code}) — ${d.human_summary} price=${d.terms.price_usd ?? "?"} checklist=${JSON.stringify(d.policy_checklist)}`,
+        }],
+      });
     }
     if (name === "get_ecosystem_stats") {
       const s = await env.DB.prepare(

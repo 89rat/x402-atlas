@@ -1,6 +1,7 @@
 /** Search API: SQL filters + ranking (liveness ▸ freshness ▸ price-accuracy ▸ relevance). */
 import type { Env } from "../lib/types";
 import { unitsToUsd } from "../ingest/adapters";
+import { sanitizeSellerText } from "../lib/sanitize";
 
 export interface SearchParams {
   q: string;
@@ -63,7 +64,7 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
     return {
       serviceId: r.service_id,
       title: r.title,
-      description: r.description,
+      description: sanitizeSellerText(r.description),
       baseUrl: r.base_url,
       categories: JSON.parse(r.categories || "[]") as string[],
       alive,
