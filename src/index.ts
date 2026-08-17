@@ -92,6 +92,26 @@ export default {
       return json(await planPurchase(env, parsed.data));
     }
 
+    if (path === "/admin/curate") {
+      const token = url.searchParams.get("token");
+      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      const { curateFromLeaderboard } = await import("./ingest/curate");
+      return json(await curateFromLeaderboard(env));
+    }
+    if (path === "/v1/sellers") {
+      const rows = await env.DB.prepare(
+        `SELECT address, settled_volume_usdc, settled_tx_count, unique_buyers, trust_score
+         FROM sellers WHERE trust_score > 0 ORDER BY trust_score DESC LIMIT 100`,
+      ).all();
+      return json(rows.results.map((s: Record<string, unknown>) => ({
+        address: s.address,
+        settled_volume_usd: Number(s.settled_volume_usdc as string) / 1e6,
+        settled_calls: s.settled_tx_count,
+        unique_buyers: s.unique_buyers,
+        trust_score: s.trust_score,
+      })));
+    }
+
     if (path === "/v1/fee/quote") {
       const notional = Number(url.searchParams.get("notional_units") ?? "0");
       const clientId = url.searchParams.get("client") ?? "anonymous";
@@ -187,6 +207,15 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
       await ensureSeeds(env);
+      // Weekly (Monday 03:00) re-curation from on-chain leaderboard
+      if (new Date().getUTCDay() === 1 && new Date().getUTCHours() === 3) {
+        try {
+          const { curateFromLeaderboard } = await import("./ingest/curate");
+          await curateFromLeaderboard(env);
+        } catch (e) {
+          console.error("curation failed", e);
+        }
+      }
       const due = await env.DB.prepare(
         `SELECT DISTINCT s.id FROM services s LEFT JOIN endpoints e ON e.service_id = s.id
          WHERE e.last_probe_at IS NULL OR e.last_probe_at < ?1 ORDER BY COALESCE(e.last_probe_at, 0) ASC LIMIT 50`,

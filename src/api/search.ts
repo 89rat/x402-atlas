@@ -24,6 +24,8 @@ export interface SearchHit {
   endpointPath: string;
   lastProbeAt: number | null;
   latencyMs: number | null;
+  /** 0-100 from on-chain settled volume + buyer diversity (0 = no on-chain evidence yet). */
+  sellerTrust: number;
   score: number;
 }
 
@@ -32,8 +34,11 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
   const rows = await env.DB.prepare(
     `SELECT s.id AS service_id, s.title, s.description, s.base_url, s.categories,
             e.alive, e.uptime_7d, e.price_min_units, e.price_max_units, e.path,
-            e.last_probe_at, e.last_latency_ms
-     FROM services s LEFT JOIN endpoints e ON e.service_id = s.id
+            e.last_probe_at, e.last_latency_ms,
+            COALESCE(sel.trust_score, 0) AS trust_score
+     FROM services s
+     LEFT JOIN endpoints e ON e.service_id = s.id
+     LEFT JOIN sellers sel ON sel.address = s.seller_address
      WHERE (?3 = 0 OR e.alive = 1)
        AND (?4 IS NULL OR e.price_min_units <= ?4)
      LIMIT 500`,
@@ -43,6 +48,7 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
       service_id: string; title: string; description: string; base_url: string; categories: string;
       alive: number; uptime_7d: number; price_min_units: number | null; price_max_units: number | null;
       path: string | null; last_probe_at: number | null; last_latency_ms: number | null;
+      trust_score: number;
     }>();
 
   const now = Date.now();
@@ -60,7 +66,8 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
       r.uptime_7d * 30 +
       relevance * 10 +
       freshness * 20 +
-      priceAccuracy * 10;
+      priceAccuracy * 10 +
+      (r.trust_score ?? 0) * 0.5; // on-chain evidence: up to +50
     return {
       serviceId: r.service_id,
       title: r.title,
@@ -74,6 +81,7 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
       endpointPath: r.path ?? "/",
       lastProbeAt: r.last_probe_at,
       latencyMs: r.last_latency_ms,
+      sellerTrust: r.trust_score ?? 0,
       score,
     };
   });

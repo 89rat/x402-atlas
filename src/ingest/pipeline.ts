@@ -4,7 +4,7 @@ import { fetchManifest } from "./manifest";
 import seedsJson from "../../seeds/services.json";
 const seeds: SeedService[] = seedsJson;
 
-function slugify(s: string): string {
+export function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) || `svc-${Date.now()}`;
 }
 
