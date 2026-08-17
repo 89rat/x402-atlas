@@ -43,6 +43,7 @@ export interface Env {
   CRAWL_QUEUE: Queue<QueueMessage>;
   ASSETS: Fetcher;
   ADMIN_TOKEN?: string;
+  ATLAS_SIGNING_KEY?: string;
 }
 
 export interface QueueMessage {

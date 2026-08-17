@@ -3,6 +3,7 @@ import type { Env, QueueMessage } from "./lib/types";
 import { ensureSeeds, ingestService, runProbe } from "./ingest/pipeline";
 import { search } from "./api/search";
 import { planPurchase, PlanInput } from "./api/policy";
+import { hmacSign } from "./lib/sign";
 import { handleMcp } from "./mcp/server";
 
 const json = (data: unknown, status = 200) =>
@@ -89,6 +90,67 @@ export default {
         return json({ error: "INVALID_INPUT", issues: parsed.error.issues }, 400);
       }
       return json(await planPurchase(env, parsed.data));
+    }
+
+    if (path === "/v1/fee/quote") {
+      const notional = Number(url.searchParams.get("notional_units") ?? "0");
+      const clientId = url.searchParams.get("client") ?? "anonymous";
+      if (!Number.isSafeInteger(notional) || notional < 0) return json({ error: "notional_units must be non-negative integer" }, 400);
+      const feeMod: typeof import("./lib/fee") = await import("./lib/fee");
+      const { calculateFee, CURRENT_FEE_POLICY, quoteId, canonicalQuoteFields } = feeMod;
+      const unsigned: Omit<import("./lib/fee").FeeQuote, "signature"> = {
+        quote_id: quoteId(notional, CURRENT_FEE_POLICY.policy_version, clientId),
+        policy_version: CURRENT_FEE_POLICY.policy_version,
+        notional_units: notional,
+        total_fee_units: calculateFee(notional, CURRENT_FEE_POLICY),
+        currency: "USDC",
+        expires_utc: new Date(Date.now() + 300_000).toISOString(),
+      };
+      return json({ ...unsigned, signature: await hmacSign(env, canonicalQuoteFields(unsigned)) });
+    }
+
+    if (path === "/v1/invite" && req.method === "POST") {
+      const body = (await req.json<Record<string, unknown>>().catch(() => ({}))) as {
+        inviter?: string; counterparty?: string; expected_savings_units?: number;
+      };
+      if (!body.inviter || !body.counterparty) return json({ error: "inviter and counterparty required" }, 400);
+      const { canonicalInvitationFields } = await import("./lib/invite");
+      type InvitationT = import("./lib/invite").Invitation;
+      const unsigned: Omit<InvitationT, "signature"> = {
+        schema_version: "atlas.invitation.v1",
+        platform_identity: "x402-atlas",
+        inviter: body.inviter.slice(0, 80),
+        counterparty: body.counterparty.slice(0, 80),
+        expected_savings_units: Math.max(0, Math.floor(body.expected_savings_units ?? 5000)),
+        integration_cost_estimate_units: 0,
+        fee_schedule_version: 1,
+        expires_utc: new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
+        openapi_spec_url: "https://atlas.code402.dev/openapi.json",
+        sandbox_endpoint: "https://atlas.code402.dev/v1/search",
+        signature_algorithm: "HMAC-SHA256",
+      };
+      return json({ ...unsigned, signature: await hmacSign(env, canonicalInvitationFields(unsigned)) });
+    }
+
+    if (path === "/robots.txt") {
+      return new Response(
+        `User-agent: *\nAllow: /\n\n# AI crawlers and RAG pipelines explicitly welcome\nUser-agent: GPTBot\nAllow: /\nUser-agent: ClaudeBot\nAllow: /\nUser-agent: PerplexityBot\nAllow: /\nUser-agent: Bytespider\nAllow: /\n\nSitemap: https://atlas.code402.dev/sitemap.xml\n`,
+        { headers: { "content-type": "text/plain" } },
+      );
+    }
+    if (path === "/openapi.json") {
+      return json({
+        openapi: "3.1.0",
+        info: { title: "x402 Atlas", version: "0.1.0", description: "Live, verified search + deterministic purchase policy for x402 machine-payable APIs. All money in 6-decimal integer USDC units." },
+        servers: [{ url: "https://atlas.code402.dev" }],
+        paths: {
+          "/v1/search": { get: { summary: "Ranked search over verified x402 services", parameters: [{ name: "q", in: "query", schema: { type: "string" } }, { name: "price_max_usd", in: "query", schema: { type: "number" } }, { name: "alive_only", in: "query", schema: { type: "boolean", default: true } }] } },
+          "/v1/plan": { post: { summary: "Deterministic purchase gate: ACCEPT/REJECT/ESCALATE with policy checklist and surplus proof", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["endpoint_url"], properties: { endpoint_url: { type: "string", format: "uri" }, budget_usd: { type: "number" }, price_ceiling_usd: { type: "number" } } } } } } } },
+          "/v1/fee/quote": { get: { summary: "Deterministic signed fee quote (expires in 300s)", parameters: [{ name: "notional_units", in: "query", schema: { type: "integer" } }, { name: "client", in: "query", schema: { type: "string" } }] } },
+          "/v1/invite": { post: { summary: "Signed propagation invitation with verifiable economic surplus" } },
+          "/mcp": { post: { summary: "MCP server: search_x402, plan_purchase, get_ecosystem_stats" } },
+        },
+      });
     }
 
     // Admin: run pipeline inline (ops/testing — protects with ADMIN_TOKEN if set)
