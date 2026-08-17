@@ -6,7 +6,7 @@ import { z } from "zod";
 
 export interface ParsedManifest {
   type: "x402" | "openapi" | "llms-txt" | "agent-card";
-  title: string;
+  title: string | null;
   description: string;
   categories: string[];
   endpoints: { path: string; method: string; description?: string; priceUnits?: { min: number; max: number } }[];
@@ -75,7 +75,7 @@ export function parseManifest(raw: string, type: ParsedManifest["type"], _root: 
       });
       return {
         type: "x402",
-        title: j.data.name ?? _root,
+        title: j.data.name ?? null,
         description: j.data.description ?? "",
         categories: j.data.categories ?? [],
         sellerAddress: j.data.payTo?.toLowerCase(),
@@ -101,7 +101,7 @@ export function parseManifest(raw: string, type: ParsedManifest["type"], _root: 
       }
       return {
         type: "openapi",
-        title: j.info?.title ?? _root,
+        title: j.info?.title ?? null,
         description: j.info?.description ?? "",
         categories: [],
         endpoints,
@@ -112,7 +112,7 @@ export function parseManifest(raw: string, type: ParsedManifest["type"], _root: 
       const descMatch = raw.match(/^>\s*(.+)$/m);
       return {
         type: "llms-txt",
-        title: titleMatch?.[1] ?? _root,
+        title: titleMatch?.[1] ?? null,
         description: descMatch?.[1] ?? "",
         categories: [],
         endpoints: [],
@@ -122,7 +122,7 @@ export function parseManifest(raw: string, type: ParsedManifest["type"], _root: 
       const j = JSON.parse(raw) as { name?: string; description?: string; skills?: { id?: string }[] };
       return {
         type: "agent-card",
-        title: j.name ?? _root,
+        title: j.name ?? null,
         description: j.description ?? "",
         categories: (j.skills ?? []).map((s) => s.id).filter((x): x is string => !!x),
         endpoints: [],

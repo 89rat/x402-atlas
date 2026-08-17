@@ -56,4 +56,23 @@ describe("paywall adapters", () => {
     expect(parsePaywall(res(200), "{}")).toBeNull();
     expect(parsePaywall(res(402), "not json")).toBeNull();
   });
+
+  it("parses code402-style challenge (price:{amount}, recipient, X-PAYMENT voucher) — captured live 2026-08-17", () => {
+    const body = JSON.stringify({
+      eip712: { name: "USD Coin", version: "2" },
+      network: { chain_id: 8453, name: "base" },
+      nonce: "0xb38a…",
+      payment_intent_id: "a2cc5838d922fd70",
+      price: { amount: "10000", asset: "USDC", decimals: 6, token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+      proof: { header: "X-PAYMENT", type: "eip3009_voucher" },
+      recipient: "0xdcd0fe977640add2dbe62ca0fb30c63f2fd9fdcf",
+      tool: "context-distill",
+      x402_version: 1,
+    });
+    const t = parsePaywall(res(402), body);
+    expect(t?.format).toBe("v1");
+    expect(t?.priceUnits.min).toBe(10000); // $0.01
+    expect(t?.payTo).toBe("0xdcd0fe977640add2dbe62ca0fb30c63f2fd9fdcf");
+    expect(t?.network).toBe("eip155:8453");
+  });
 });

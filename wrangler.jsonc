@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "x402-atlas-db",
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "5c165c0e-c389-4da7-8936-e0c2410dea58",
       "migrations_dir": "migrations"
     }
   ],
@@ -29,7 +29,7 @@
   "kv_namespaces": [
     {
       "binding": "CACHE",
-      "id": "REPLACE_WITH_KV_ID"
+      "id": "bfcb78ff4bd34954baaaa0c16ad40ef0"
     }
   ],
   "vectorize": [

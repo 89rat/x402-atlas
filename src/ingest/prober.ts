@@ -41,13 +41,19 @@ export async function probeEndpoint(
   baseUrl: string,
   path: string,
   method: string = "GET",
+  probeBody?: unknown,
 ): Promise<ProbeResult> {
   const url = baseUrl.replace(/\/+$/, "") + path;
+  const bodyStr = probeBody !== undefined ? JSON.stringify(probeBody) : "{}";
   const started = Date.now();
   try {
     let res = await fetch(url, {
       method,
-      headers: { "user-agent": "x402-atlas/0.1 (liveness probe)" },
+      headers: {
+        "user-agent": "x402-atlas/0.1 (liveness probe)",
+        ...(method !== "GET" ? { "content-type": "application/json" } : {}),
+      },
+      ...(method !== "GET" ? { body: bodyStr } : {}),
       signal: AbortSignal.timeout(10_000),
     });
     let bodyText = res.status === 402 ? await res.text() : null;
@@ -63,7 +69,7 @@ export async function probeEndpoint(
         res = await fetch(url, {
           method: "POST",
           headers: { "user-agent": "x402-atlas/0.1 (liveness probe)", "content-type": "application/json" },
-          body: "{}",
+          body: bodyStr,
           signal: AbortSignal.timeout(10_000),
         });
         bodyText = res.status === 402 ? await res.text() : null;

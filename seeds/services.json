@@ -1,17 +1,200 @@
 [
-  { "baseUrl": "https://superhighway.xyz", "title": "Superhighway", "description": "Web search API for agents", "categories": ["search", "web"], "endpoints": [{ "path": "/search" }] },
-  { "baseUrl": "https://x402.org", "title": "x402 Reference", "description": "x402 Foundation resources", "categories": ["reference"] },
-  { "baseUrl": "https://agentsvc.io", "title": "agentsvc", "description": "Agent utility APIs", "categories": ["utility"], "endpoints": [{ "path": "/api" }] },
-  { "baseUrl": "https://kaisha.dev", "title": "Kaisha", "description": "Japan registry data APIs", "categories": ["data", "registry"] },
-  { "baseUrl": "https://www.bismuth.ai", "title": "Bismuth", "description": "Bismuth API suite", "categories": ["ai", "data"] },
-  { "baseUrl": "https://agenttoll.dev", "title": "Tollbooth", "description": "Agent toll gate APIs", "categories": ["utility"] },
-  { "baseUrl": "https://x402toll.com", "title": "x402toll", "description": "Pay-per-call toll APIs", "categories": ["utility"] },
-  { "baseUrl": "https://img402.com", "title": "img402", "description": "Image hosting with one-time payment", "categories": ["hosting", "images"] },
-  { "baseUrl": "https://logicnodes.com", "title": "LogicNodes", "description": "Tiered compute/data APIs", "categories": ["compute", "data"] },
-  { "baseUrl": "https://signaloracle.com", "title": "Signal Oracle", "description": "Signal/data oracle feeds", "categories": ["data", "finance"] },
-  { "baseUrl": "https://k2so.wrong.systems", "title": "K-2SO Merchant", "description": "Autonomous x402 agent merchant on Base", "categories": ["agent", "example"] },
-  { "baseUrl": "https://deepnets.io", "title": "Deepnets", "description": "AI inference on Solana via x402", "categories": ["ai", "inference"] },
-  { "baseUrl": "https://airook.com", "title": "AI Rook", "description": "Mixed AI utility APIs", "categories": ["ai"] },
-  { "baseUrl": "https://solprobe.com", "title": "SolProbe", "description": "Solana data probes", "categories": ["data", "solana"] },
-  { "baseUrl": "https://botsmith.dev", "title": "botsmith", "description": "Agent tooling APIs", "categories": ["utility"] }
+  {
+    "baseUrl": "https://code402.dev",
+    "title": "code402 (prod)",
+    "description": "Deterministic machine-verifiable paid tools with signed receipts: context-distill, VAT check, company number format. Base mainnet USDC.",
+    "categories": [
+      "tools",
+      "verification",
+      "distill"
+    ],
+    "endpoints": [
+      {
+        "path": "/v1/tools/context-distill/call",
+        "method": "POST",
+        "probe_body": {
+          "input": {
+            "html": "<p>probe</p>"
+          }
+        }
+      },
+      {
+        "path": "/v1/tools/vat-mod97-check/call",
+        "method": "POST",
+        "probe_body": {
+          "input": {
+            "vat_number": "DE123456789"
+          }
+        }
+      },
+      {
+        "path": "/v1/tools/company-number-format/call",
+        "method": "POST",
+        "probe_body": {
+          "input": {
+            "company_number": "12345678"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "baseUrl": "https://code402-edge.akrivis.workers.dev",
+    "title": "code402 (staging)",
+    "description": "Staging (Base Sepolia) instance of code402 deterministic paid tools.",
+    "categories": [
+      "tools",
+      "staging"
+    ],
+    "endpoints": [
+      {
+        "path": "/v1/tools/context-distill/call",
+        "method": "POST",
+        "probe_body": {
+          "input": {
+            "html": "<p>probe</p>"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "baseUrl": "https://superhighway.xyz",
+    "title": "Superhighway",
+    "description": "Web search API for agents",
+    "categories": [
+      "search",
+      "web"
+    ],
+    "endpoints": [
+      {
+        "path": "/search"
+      }
+    ]
+  },
+  {
+    "baseUrl": "https://x402.org",
+    "title": "x402 Reference",
+    "description": "x402 Foundation resources",
+    "categories": [
+      "reference"
+    ]
+  },
+  {
+    "baseUrl": "https://agentsvc.io",
+    "title": "agentsvc",
+    "description": "Agent utility APIs",
+    "categories": [
+      "utility"
+    ],
+    "endpoints": [
+      {
+        "path": "/api"
+      }
+    ]
+  },
+  {
+    "baseUrl": "https://kaisha.dev",
+    "title": "Kaisha",
+    "description": "Japan registry data APIs",
+    "categories": [
+      "data",
+      "registry"
+    ]
+  },
+  {
+    "baseUrl": "https://www.bismuth.ai",
+    "title": "Bismuth",
+    "description": "Bismuth API suite",
+    "categories": [
+      "ai",
+      "data"
+    ]
+  },
+  {
+    "baseUrl": "https://agenttoll.dev",
+    "title": "Tollbooth",
+    "description": "Agent toll gate APIs",
+    "categories": [
+      "utility"
+    ]
+  },
+  {
+    "baseUrl": "https://x402toll.com",
+    "title": "x402toll",
+    "description": "Pay-per-call toll APIs",
+    "categories": [
+      "utility"
+    ]
+  },
+  {
+    "baseUrl": "https://img402.com",
+    "title": "img402",
+    "description": "Image hosting with one-time payment",
+    "categories": [
+      "hosting",
+      "images"
+    ]
+  },
+  {
+    "baseUrl": "https://logicnodes.com",
+    "title": "LogicNodes",
+    "description": "Tiered compute/data APIs",
+    "categories": [
+      "compute",
+      "data"
+    ]
+  },
+  {
+    "baseUrl": "https://signaloracle.com",
+    "title": "Signal Oracle",
+    "description": "Signal/data oracle feeds",
+    "categories": [
+      "data",
+      "finance"
+    ]
+  },
+  {
+    "baseUrl": "https://k2so.wrong.systems",
+    "title": "K-2SO Merchant",
+    "description": "Autonomous x402 agent merchant on Base",
+    "categories": [
+      "agent",
+      "example"
+    ]
+  },
+  {
+    "baseUrl": "https://deepnets.io",
+    "title": "Deepnets",
+    "description": "AI inference on Solana via x402",
+    "categories": [
+      "ai",
+      "inference"
+    ]
+  },
+  {
+    "baseUrl": "https://airook.com",
+    "title": "AI Rook",
+    "description": "Mixed AI utility APIs",
+    "categories": [
+      "ai"
+    ]
+  },
+  {
+    "baseUrl": "https://solprobe.com",
+    "title": "SolProbe",
+    "description": "Solana data probes",
+    "categories": [
+      "data",
+      "solana"
+    ]
+  },
+  {
+    "baseUrl": "https://botsmith.dev",
+    "title": "botsmith",
+    "description": "Agent tooling APIs",
+    "categories": [
+      "utility"
+    ]
+  }
 ]

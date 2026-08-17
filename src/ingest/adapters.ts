@@ -102,9 +102,26 @@ export function parsePaywall(res: Response, bodyText: string | null): PaywallTer
       const parsed = JSON.parse(bodyText) as {
         accepts?: RawRequirements[];
         paymentRequirements?: RawRequirements[];
+        // code402-style challenge: { price: { amount }, recipient, proof: { header: X-PAYMENT } }
+        price?: { amount?: string | number; asset?: string; decimals?: number; token_address?: string };
+        recipient?: string;
+        network?: { chain_id?: number; name?: string };
       };
-      const reqs = parsed.accepts ?? parsed.paymentRequirements ?? [];
-      return normalize("v1", reqs);
+      if (parsed.accepts ?? parsed.paymentRequirements) {
+        return normalize("v1", parsed.accepts ?? parsed.paymentRequirements ?? []);
+      }
+      if (parsed.price?.amount !== undefined) {
+        return {
+          format: "v1",
+          scheme: "exact",
+          priceUnits: { min: toUnits(parsed.price.amount), max: toUnits(parsed.price.amount) },
+          network: parsed.network?.chain_id ? `eip155:${parsed.network.chain_id}` : null,
+          asset: parsed.price.token_address ?? parsed.price.asset ?? null,
+          payTo: parsed.recipient?.toLowerCase() ?? null,
+          facilitatorUrl: null,
+        };
+      }
+      return null;
     } catch {
       return null;
     }

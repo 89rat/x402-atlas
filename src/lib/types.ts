@@ -32,7 +32,7 @@ export interface SeedService {
   title: string;
   description?: string;
   categories?: string[];
-  endpoints?: { path: string; method?: string; description?: string }[];
+  endpoints?: { path: string; method?: string; description?: string; probe_body?: unknown }[];
 }
 
 export interface Env {

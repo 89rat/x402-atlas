@@ -85,6 +85,7 @@ export default {
     if (path === "/admin/crawl") {
       const token = url.searchParams.get("token");
       if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (url.searchParams.get("bootstrap") === "1") await ensureSeeds(env);
       const serviceId = url.searchParams.get("service");
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 5), 20);
       const targets = serviceId
