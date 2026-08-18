@@ -71,7 +71,9 @@ export async function ingestService(env: Env, serviceId: string): Promise<{ upda
          ON CONFLICT(address) DO UPDATE SET updated_at = ?2`,
       ).bind(parsed.sellerAddress, now).run();
     }
-    for (const e of parsed.endpoints) {
+    // Cap: keep the first 20 endpoints per service — resource-heavy manifests
+    // (leaderboard sellers expose hundreds of tool URIs) would starve everything else.
+    for (const e of parsed.endpoints.slice(0, 20)) {
       await env.DB.prepare(
         `INSERT INTO endpoints (id, service_id, path, method, description, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)

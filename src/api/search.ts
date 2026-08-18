@@ -33,14 +33,22 @@ export async function search(env: Env, params: SearchParams): Promise<SearchHit[
   const terms = params.q.toLowerCase().split(/\s+/).filter(Boolean);
   const rows = await env.DB.prepare(
     `SELECT s.id AS service_id, s.title, s.description, s.base_url, s.categories,
-            e.alive, e.uptime_7d, e.price_min_units, e.price_max_units, e.path,
-            e.last_probe_at, e.last_latency_ms,
-            COALESCE(sel.trust_score, 0) AS trust_score
+            MAX(e.alive) AS alive, MAX(e.uptime_7d) AS uptime_7d,
+            MIN(CASE WHEN e.price_min_units IS NOT NULL THEN e.price_min_units END) AS price_min_units,
+            MAX(e.price_max_units) AS price_max_units,
+            (SELECT e2.path FROM endpoints e2 WHERE e2.service_id = s.id
+              AND e2.price_min_units = (SELECT MIN(price_min_units) FROM endpoints WHERE service_id = s.id AND price_min_units IS NOT NULL)
+              LIMIT 1) AS path,
+            MAX(e.last_probe_at) AS last_probe_at, MIN(e.last_latency_ms) AS last_latency_ms,
+            COALESCE(MAX(sel.trust_score), 0) AS trust_score
      FROM services s
      LEFT JOIN endpoints e ON e.service_id = s.id
      LEFT JOIN sellers sel ON sel.address = s.seller_address
-     WHERE (?3 = 0 OR e.alive = 1)
-       AND (?4 IS NULL OR e.price_min_units <= ?4)
+     WHERE 1=1
+     GROUP BY s.id
+     HAVING (?3 = 0 OR MAX(e.alive) = 1)
+       AND (?4 IS NULL OR MIN(CASE WHEN e.price_min_units IS NOT NULL THEN e.price_min_units END) <= ?4)
+     ORDER BY trust_score DESC
      LIMIT 500`,
   )
     .bind(params.aliveOnly ? 1 : 0, params.chain ?? null, params.aliveOnly ? 1 : 0, params.priceMaxUnits ?? null)
