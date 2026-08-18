@@ -127,6 +127,45 @@ GET  https://atlas.code402.dev/v1/search?q=web+search
   );
 }
 
+export async function compliancePage(): Promise<Response> {
+  const body = `<h2>Compliance posture</h2>
+<p>x402 Atlas is a <strong>non-custodial</strong> discovery and policy layer for machine-to-machine commerce. This page documents our data and compliance position for enterprise review.</p>
+
+<h3>Money handling</h3>
+<ul>
+<li>Atlas <strong>never holds, routes, or can access customer funds</strong>. All payments are direct buyer→seller EIP-3009 (transferWithAuthorization) USDC transfers on Base — verified on-chain, no intermediary custody.</li>
+<li>Atlas charges no fees today. Future fees will be received via x402 payments (also direct, non-custodial).</li>
+</ul>
+
+<h3>Infrastructure</h3>
+<ul>
+<li>Runs entirely on <strong>Cloudflare</strong> — SOC 2 Type II, ISO 27001, PCI DSS, FedRAMP-audited infrastructure with GDPR data-processing terms (Cloudflare Data Compliance Solution Brief, REV PMM-JAN2024).</li>
+<li>D1 storage with built-in 30-day point-in-time recovery (Time Travel).</li>
+<li>Immutable audit snapshots (R2) of every crawled manifest.</li>
+</ul>
+
+<h3>Data we hold</h3>
+<ul>
+<li><strong>No accounts, no PII.</strong> Anonymous search queries (query text, no identifiers) retained max 90 days, then purged automatically (hourly job).</li>
+<li>IP addresses used transiently for rate limiting (60s counters, never persisted as identity).</li>
+<li>Public data only: seller manifests, probe telemetry, on-chain settlement records (public blockchain data).</li>
+</ul>
+
+<h3>Application controls</h3>
+<ul>
+<li>Prompt-injection sanitization on all third-party metadata before it reaches agent contexts.</li>
+<li>HMAC-signed fee quotes and invitations; deterministic integer money math (no floats).</li>
+<li>Token-bucket rate limiting (120 req/min/IP) on all public endpoints; authenticated admin routes.</li>
+<li><code>/.well-known/security.txt</code> for vulnerability disclosure.</li>
+</ul>
+
+<p class="muted">Questions or audits: security@code402.dev</p>`;
+  return new Response(
+    page("x402 Atlas — compliance posture", "Non-custodial M2M commerce discovery layer on Cloudflare: SOC 2/ISO/GDPR-covered infrastructure, 90-day log retention, no PII, no fund custody.", body),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
 export async function sitemapXml(env: Env): Promise<Response> {
   const hits = await search(env, { q: "", aliveOnly: false, limit: 200 });
   const ids = [...new Set(hits.map((h) => h.serviceId))];
@@ -135,6 +174,7 @@ export async function sitemapXml(env: Env): Promise<Response> {
     `${BASE}/services`,
     `${BASE}/leaderboard`,
     `${BASE}/reports/state-of-x402`,
+    `${BASE}/compliance`,
     ...ids.map((id) => `${BASE}/services/${id}`),
   ];
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `<url><loc>${u}</loc><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>`;

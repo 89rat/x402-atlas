@@ -166,6 +166,10 @@ export default {
       const { stateReportPage } = await import("./api/pages");
       return stateReportPage(env);
     }
+    if (path === "/compliance") {
+      const { compliancePage } = await import("./api/pages");
+      return compliancePage();
+    }
     if (path === "/sitemap.xml") {
       const { sitemapXml } = await import("./api/pages");
       return sitemapXml(env);
@@ -280,6 +284,8 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
       await ensureSeeds(env);
+      // GDPR data minimization: purge anonymous search logs after 90 days
+      await env.DB.prepare(`DELETE FROM search_log WHERE ts < ?1`).bind(Date.now() - 90 * 24 * 3600_000).run();
       // Weekly (Monday 03:00) re-curation from on-chain leaderboard
       if (new Date().getUTCDay() === 1 && new Date().getUTCHours() === 3) {
         try {
