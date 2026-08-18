@@ -243,6 +243,10 @@ export default {
       const { stateReport } = await import("./api/pages");
       return stateReport(env, "md");
     }
+    if (/^\/reports\/\d{4}-\d{2}-\d{2}$/.test(path)) {
+      const { reportArchivePage } = await import("./api/pages");
+      return reportArchivePage(env, path.slice("/reports/".length));
+    }
     if (path === "/reports/state-of-x402") {
       const { stateReportPage } = await import("./api/pages");
       return stateReportPage(env);

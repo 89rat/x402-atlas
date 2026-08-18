@@ -207,6 +207,31 @@ export async function compliancePage(): Promise<Response> {
   );
 }
 
+/** Dated archive of a specific day's snapshot (SEO: one stable citable URL per week). */
+export async function reportArchivePage(env: Env, day: string): Promise<Response> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return new Response("Not found", { status: 404 });
+  const m = await env.DB.prepare(`SELECT * FROM metrics_daily WHERE day = ?1`).bind(day).first<Record<string, unknown>>();
+  if (!m) return new Response("Not found", { status: 404 });
+  const usd = (u: unknown) => (Number(u) / 1e6).toFixed(2);
+  const body = `<h2>State of x402 — ${day}</h2>
+<table>
+<tr><th>Metric</th><th>Value</th></tr>
+<tr><td>Services indexed</td><td>${m.services}</td></tr>
+<tr><td>Endpoints probed</td><td>${m.endpoints_probed}</td></tr>
+<tr><td>Verified alive</td><td>${m.alive}</td></tr>
+<tr><td>Searches (24h)</td><td>${m.searches}</td></tr>
+<tr><td>Zero-result queries</td><td>${m.zero_result_queries}</td></tr>
+<tr><td>Raw settled volume</td><td>$${usd(m.raw_settled_units)}</td></tr>
+<tr><td><strong>Sybil-adjusted volume</strong></td><td><strong>$${usd(m.sybil_adjusted_units)}</strong> (volume × min(1, buyers/10))</td></tr>
+<tr><td>Top seller</td><td><code>${String(m.top_seller_address ?? "—").slice(0, 16)}…</code></td></tr>
+</table>
+<p class="muted">Live version: <a href="/reports/state-of-x402">current report</a> · <a href="/kaizen/daily">JSON series</a></p>`;
+  return new Response(
+    page(`State of x402 — ${day} | x402 Atlas`, `x402 ecosystem snapshot for ${day}: services, liveness, on-chain settled volume (sybil-adjusted).`, body, `${BASE}/reports/${day}`),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
 export async function sitemapXml(env: Env): Promise<Response> {
   const hits = await search(env, { q: "", aliveOnly: false, limit: 200 });
   const ids = [...new Set(hits.map((h) => h.serviceId))];
