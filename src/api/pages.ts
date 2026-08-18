@@ -150,20 +150,73 @@ export async function claimPage(env: Env): Promise<Response> {
   const sellers = (await env.DB.prepare(
     `SELECT address, trust_score, settled_volume_usdc FROM sellers WHERE trust_score > 0 ORDER BY trust_score DESC LIMIT 100`,
   ).all<{ address: string; trust_score: number; settled_volume_usdc: string }>()).results;
-  const rows = sellers.map((s) =>
-    `<tr><td><code>${esc(s.address.slice(0, 8))}…${esc(s.address.slice(-6))}</code></td><td>${s.trust_score}</td><td class="price">$${unitsToUsd(Number(s.settled_volume_usdc))}</td><td><a href="https://atlas.code402.dev/v1/submit">claim</a></td></tr>`,
-  ).join("");
-  const body = `<h2>Claim your seller profile — free</h2>
-<p>Your API already earns on-chain x402 revenue. <strong>Atlas agents search this index before they pay.</strong> Claiming keeps your pricing, uptime, and endpoints current — verified by hourly probes, ranked by your real settled volume.</p>
-<h3>One line, done:</h3>
-<pre><code>npm i @x402-atlas/announce
-node -e "import('@x402-atlas/announce').then(m => m.announce({ baseUrl: 'https://your-api.com', title: 'Your API' }))"</code></pre>
-<p>Or <a href="/v1/submit">submit directly</a> (POST JSON). Verification is automatic: our prober hits your 402 paywall within the hour.</p>
-<h3>Current on-chain sellers</h3>
-<table><tr><th>Wallet</th><th>Trust</th><th>Settled (7d)</th><th></th></tr>${rows}</table>
-<p class="muted">Coming soon (paid, USDC via x402): verified badge, price analytics, buyer-intent feed from our zero-result queries.</p>`;
+  const rows = sellers.slice(0, 12).map((s, i) =>
+    `<tr><td>#${i + 1}</td><td><code style="color:#8b95a8">${esc(s.address.slice(0, 8))}…${esc(s.address.slice(-6))}</code></td><td style="color:#22d3ee;font-family:ui-monospace,monospace">${s.trust_score}</td><td style="color:#34d399;font-family:ui-monospace,monospace">$${unitsToUsd(Number(s.settled_volume_usdc))}</td></tr>`,
+  ).join("\n");
+  const body = `
+<div style="text-align:center;padding:64px 20px 36px">
+  <div style="font-family:ui-monospace,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#4da3ff">for sellers · free · 2% only when you earn</div>
+  <h1 style="font-size:clamp(28px,4.5vw,44px);font-weight:800;margin:14px 0;letter-spacing:-.02em">Agents search here<br>before they pay.</h1>
+  <p style="max-width:600px;margin:0 auto;color:#8b95a8;font-size:17px">Claim your profile and the agents using this index find <em>your</em> current pricing, uptime, and on-chain trust — verified hourly by our probes, ranked by your real settled volume.</p>
+  <div style="margin-top:28px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <a href="#start" style="padding:13px 26px;border-radius:10px;background:#4da3ff;color:#06101f;font-weight:700;text-decoration:none">Claim your profile — free</a>
+    <a href="https://github.com/89rat/m2m-exchange" style="padding:13px 26px;border-radius:10px;border:1px solid #1e2637;color:#8b95a8;font-weight:600;text-decoration:none">How selling works</a>
+  </div>
+</div>
+
+<div style="border-top:1px solid #1e2637;padding:48px 0">
+  <h2 style="text-align:center;font-size:22px;margin-bottom:8px">What you get, free</h2>
+  <p style="text-align:center;color:#5a6478;font-size:14px;margin-bottom:28px">No payment integration. No billing code. No PCI anything.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;max-width:900px;margin:0 auto">
+    ${[
+      ["🔍", "Discovery", "Listed in the index agents search before spending — plus a dedicated MCP server for your API, auto-generated."],
+      ["🛡️", "Trust that compounds", "Your on-chain settled volume and buyer diversity become a public trust score nobody can fake."],
+      ["🧾", "Receipts + invoices", "Every settled call is a receipt. Your analytics are free, forever."],
+      ["⚡", "Non-custodial rails", "Buyers pay your wallet directly per call (x402 / USDC). We never touch funds."],
+    ].map(([icon, t, d]) => `
+    <div style="border:1px solid #1e2637;border-radius:14px;background:#131a29;padding:22px">
+      <div style="font-size:26px">${icon}</div>
+      <h3 style="font-size:16px;margin:8px 0 6px">${t}</h3>
+      <p style="color:#8b95a8;font-size:13.5px">${d}</p>
+    </div>`).join("")}
+  </div>
+</div>
+
+<div id="start" style="border-top:1px solid #1e2637;padding:48px 0">
+  <h2 style="text-align:center;font-size:22px;margin-bottom:28px">Live in two minutes</h2>
+  <div style="max-width:680px;margin:0 auto;display:grid;gap:14px">
+    <div style="border:1px solid #1e2637;border-radius:12px;background:#131a29;padding:18px 22px">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4da3ff">STEP 1 — one line (npm)</div>
+      <pre style="font-family:ui-monospace,monospace;font-size:13px;color:#8b95a8;background:#0a0d14;border:1px solid #1e2637;border-radius:8px;padding:12px;margin-top:8px;overflow-x:auto">npm i @x402-atlas/announce
+node -e "import('@x402-atlas/announce').then(m=>m.announce({baseUrl:'https://your-api.com',title:'Your API'}))"</pre>
+    </div>
+    <div style="border:1px solid #1e2637;border-radius:12px;background:#131a29;padding:18px 22px">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4da3ff">STEP 1 — or plain HTTP</div>
+      <pre style="font-family:ui-monospace,monospace;font-size:13px;color:#8b95a8;background:#0a0d14;border:1px solid #1e2637;border-radius:8px;padding:12px;margin-top:8px;overflow-x:auto">curl -X POST https://atlas.code402.dev/v1/submit   -H 'content-type: application/json'   -d '{"base_url":"https://your-api.com","title":"Your API"}'</pre>
+    </div>
+    <div style="border:1px solid #1e2637;border-radius:12px;background:#131a29;padding:18px 22px">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4da3ff">STEP 2 — verification is automatic</div>
+      <p style="color:#8b95a8;font-size:13.5px;margin-top:8px">Our hourly prober hits your 402 paywall, records your real price and uptime, and your listing goes live — no email, no approval, no waiting.</p>
+    </div>
+    <div style="border:1px solid #1e2637;border-radius:12px;background:#131a29;padding:18px 22px">
+      <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4da3ff">SELL MORE — full marketplace (optional)</div>
+      <p style="color:#8b95a8;font-size:13.5px;margin-top:8px">Want per-call payments handled end-to-end? Register a wallet on the <a href="https://gateway.code402.dev/v1/sellers">M2M/1 gateway</a> — buyers pay you direct, we route and attest.</p>
+    </div>
+  </div>
+</div>
+
+<div style="border-top:1px solid #1e2637;padding:48px 0 64px">
+  <h2 style="text-align:center;font-size:22px;margin-bottom:6px">Sellers already earning on-chain</h2>
+  <p style="text-align:center;color:#5a6478;font-size:14px;margin-bottom:24px">ranked by verified settled volume — not self-reported</p>
+  <div style="max-width:640px;margin:0 auto;border:1px solid #1e2637;border-radius:12px;overflow:hidden">
+  <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+    <tr style="background:#0f141f"><th style="text-align:left;padding:10px 16px;color:#5a6478;font-weight:500">#</th><th style="text-align:left;padding:10px 16px;color:#5a6478;font-weight:500">Wallet</th><th style="text-align:right;padding:10px 16px;color:#5a6478;font-weight:500">Trust</th><th style="text-align:right;padding:10px 16px;color:#5a6478;font-weight:500">Settled 7d</th></tr>
+    ${rows}
+  </table></div>
+  <p style="text-align:center;color:#5a6478;font-size:12.5px;margin-top:18px">Coming for verified sellers (USDC via x402): analytics dashboards, buyer-intent feed, priority placement.</p>
+</div>`;
   return new Response(
-    page("Claim your x402 seller profile — free | x402 Atlas", "Sellers with on-chain x402 revenue: get discovered by paying AI agents. One-line registration, hourly verified pricing and uptime, ranked by real settled volume.", body),
+    page("Claim your x402 seller profile — free | x402 Atlas", "Agents search this index before they pay. Claim your API's profile: one-line registration, hourly verified pricing and uptime, on-chain trust. Free — 2% only when you earn.", body),
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );
 }

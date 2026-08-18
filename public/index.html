@@ -2,48 +2,218 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>x402 Atlas — live search for machine-payable APIs</title>
+<title>x402 Atlas — every API an AI agent can pay for</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Search 209+ machine-payable APIs with probe-verified prices, uptime, and on-chain seller trust. The neutral index of the agent economy.">
+<link rel="canonical" href="https://atlas.code402.dev/">
+<meta property="og:title" content="x402 Atlas — the neutral index of the machine-payable economy">
+<meta property="og:description" content="Verified prices, uptime, and on-chain trust for 209+ payable APIs. Free for agents and buyers, forever.">
+<meta property="og:type" content="website">
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-sans-serif, system-ui; background: #0b0e14; color: #e6e9ef; max-width: 880px; margin: 0 auto; padding: 2rem 1rem; }
-  h1 { font-size: 1.6rem; } h1 span { color: #4da3ff; }
-  .sub { color: #8b93a3; margin-bottom: 1.5rem; }
-  form { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
-  input[type=text] { flex: 1; padding: .7rem 1rem; border-radius: 8px; border: 1px solid #2a3142; background: #131826; color: inherit; font-size: 1rem; }
-  button { padding: .7rem 1.2rem; border-radius: 8px; border: 0; background: #4da3ff; color: #08111f; font-weight: 600; cursor: pointer; }
-  .card { border: 1px solid #222a3a; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: .8rem; display: flex; justify-content: space-between; gap: 1rem; }
-  .badge { font-size: .75rem; padding: .15rem .5rem; border-radius: 999px; }
-  .alive { background: #10331d; color: #51d88a; } .dead { background: #3a1a1a; color: #ff7a7a; }
-  .price { white-space: nowrap; color: #51d88a; font-weight: 600; }
-  a { color: #4da3ff; text-decoration: none; }
-  .muted { color: #8b93a3; font-size: .85rem; }
+  :root {
+    color-scheme: dark;
+    --bg: #0a0d14; --bg2: #0f141f; --card: #131a29; --border: #1e2637;
+    --text: #e7ecf5; --muted: #8b95a8; --dim: #5a6478;
+    --accent: #4da3ff; --accent2: #22d3ee; --good: #34d399; --warn: #fbbf24; --bad: #f87171;
+    --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  header { position: sticky; top: 0; z-index: 50; background: rgba(10,13,20,.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+  .nav { display: flex; align-items: center; gap: 20px; padding: 14px 0; }
+  .logo { font-weight: 700; font-size: 17px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .logo .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 8px var(--good); animation: pulse 2.5s infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .nav .links { display: flex; gap: 16px; margin-left: auto; font-size: 14px; }
+  .nav .links a { color: var(--muted); } .nav .links a:hover { color: var(--text); }
+  .btn { display: inline-block; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); transition: all .15s; }
+  .btn:hover { border-color: var(--accent); color: var(--text); text-decoration: none; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #06101f; }
+  .btn-primary:hover { background: var(--accent2); border-color: var(--accent2); color: #06101f; }
+
+  .hero { padding: 72px 0 44px; text-align: center; }
+  .hero .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .hero h1 { font-size: clamp(30px, 5vw, 48px); font-weight: 800; letter-spacing: -.02em; margin: 14px 0 16px; }
+  .hero h1 .grad { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.sub { max-width: 620px; margin: 0 auto; color: var(--muted); font-size: 17px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 36px auto 0; max-width: 760px; }
+  .stat { background: var(--bg2); padding: 16px 12px; }
+  .stat .v { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--accent2); }
+  .stat .k { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+  .searchbar { display: flex; gap: 10px; margin: 32px auto 8px; max-width: 720px; }
+  .searchbar input[type=text] { flex: 1; padding: 14px 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 16px; outline: none; transition: border .15s; }
+  .searchbar input[type=text]:focus { border-color: var(--accent); }
+  .searchbar button { padding: 14px 26px; border-radius: 10px; border: 0; background: var(--accent); color: #06101f; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .searchbar button:hover { background: var(--accent2); }
+  .filters { display: flex; gap: 14px; justify-content: center; align-items: center; margin: 10px 0 0; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .filters label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .filters input, .filters select { accent-color: var(--accent); background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
+  .hint { text-align: center; color: var(--dim); font-size: 13px; margin-top: 10px; font-family: var(--mono); }
+  .hint b { color: var(--muted); font-weight: 500; }
+
+  .results { margin: 28px 0 60px; }
+  .rhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .rhead h2 { font-size: 16px; font-weight: 600; color: var(--muted); }
+  .card { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 18px 20px; margin-bottom: 12px; display: flex; gap: 18px; transition: border .15s; }
+  .card:hover { border-color: #2c3a55; }
+  .card .main { flex: 1; min-width: 0; }
+  .card .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .card .title h3 { font-size: 16px; font-weight: 650; }
+  .card .url { font-family: var(--mono); font-size: 12.5px; color: var(--dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card .desc { color: var(--muted); font-size: 13.5px; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .badge { font-family: var(--mono); font-size: 10.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .b-alive { color: var(--good); border-color: #14532d; background: #052e1a; }
+  .b-dead { color: var(--dim); border-color: var(--border); background: var(--bg2); }
+  .b-trust { color: var(--accent2); border-color: #164e63; background: #082f49; }
+  .b-cat { color: var(--muted); border-color: var(--border); }
+  .side { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
+  .price { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--good); white-space: nowrap; }
+  .price span { font-size: 11px; color: var(--dim); font-weight: 400; }
+  .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); border: 1px dashed var(--border); border-radius: 12px; }
+  .empty .big { font-size: 34px; margin-bottom: 10px; }
+  .load { text-align: center; margin: 30px; }
+
+  .audiences { border-top: 1px solid var(--border); padding: 56px 0; }
+  .audiences h2 { text-align: center; font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .audiences .sub { text-align: center; color: var(--muted); margin-bottom: 32px; font-size: 14.5px; }
+  .agrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .acard { border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 24px; }
+  .acard .tag { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .1em; }
+  .acard h3 { font-size: 17px; margin: 8px 0; }
+  .acard p { color: var(--muted); font-size: 13.5px; margin-bottom: 14px; }
+  .acard pre { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; margin-bottom: 14px; }
+
+  footer { border-top: 1px solid var(--border); padding: 32px 0 44px; color: var(--dim); font-size: 13px; }
+  .fgrid { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  footer .m { font-family: var(--mono); font-size: 12px; }
+  footer .m a { color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .card { flex-direction: column; } .side { flex-direction: row; text-align: left; align-items: center; }
+    .nav .links { display: none; }
+  }
 </style>
 </head>
 <body>
-<h1>x402 <span>Atlas</span></h1>
-<p class="sub">Live, verified search for machine-payable (HTTP 402 / x402) APIs. Prices measured by real probes — not seller claims.</p>
-<form id="f"><input type="text" id="q" placeholder="e.g. web search, token prices, inference…" autofocus><button>Search</button></form>
-<div id="results"><p class="muted">Loading catalog…</p></div>
+<header><div class="container nav">
+  <a class="logo" href="/"><span class="dot"></span>x402 Atlas</a>
+  <div class="links">
+    <a href="/services">Directory</a><a href="/leaderboard">Leaderboard</a><a href="/reports/state-of-x402">Reports</a><a href="/mcp-directory?format=html">MCP servers</a>
+  </div>
+  <a class="btn btn-primary" href="/sellers/claim">List your API — free</a>
+</div></header>
+
+<section class="hero container">
+  <div class="eyebrow">the neutral index of the machine-payable economy</div>
+  <h1>Every API an AI agent<br>can <span class="grad">pay for</span>.</h1>
+  <p class="sub">Probe-verified prices, uptime, and on-chain seller trust. Free for agents and buyers — forever. Sellers claim listings in one line.</p>
+  <div class="stats" id="stats"><div class="stat"><div class="v">…</div><div class="k">loading live index</div></div></div>
+  <form class="searchbar" id="f">
+    <input type="text" id="q" placeholder="What does your agent need? e.g. web search, token prices, VAT validation…" autofocus>
+    <button>Search</button>
+  </form>
+  <div class="filters">
+    <label><input type="checkbox" id="alive" checked> verified alive only</label>
+    <label>max $<input type="number" id="pmax" placeholder="0.05" step="0.001" min="0" style="width:70px"></label>
+    <label>sort <select id="sort"><option value="rank">trust rank</option><option value="price">lowest price</option></select></label>
+  </div>
+  <div class="hint">agents: same index via MCP — <b>atlas.code402.dev/mcp</b> · full dump: <b>/directory.md</b></div>
+</section>
+
+<section class="results container" id="results"><div class="load">Loading catalog…</div></section>
+
+<section class="audiences">
+  <div class="container">
+    <h2>Built for three kinds of visitor</h2>
+    <p class="sub">Whatever you are, there's exactly one next step.</p>
+    <div class="agrid">
+      <div class="acard"><div class="tag">FOR AGENTS & AGENT BUILDERS</div><h3>Search before you pay</h3>
+        <p>Query the index from your agent's tool config. A deterministic policy gate (ACCEPT / REJECT / ESCALATE) protects every purchase before a signature exists.</p>
+        <pre>POST atlas.code402.dev/mcp
+ → search_x402("web search")
+ → plan_purchase(url, budget_usd)</pre>
+        <a class="btn" href="/openapi.json">OpenAPI spec</a></div>
+      <div class="acard"><div class="tag">FOR SELLERS</div><h3>Get discovered by paying agents</h3>
+        <p>Agents search this index before they spend. Register your wallet, list your endpoint — your listing verifies itself via hourly probes and on-chain volume.</p>
+        <pre>curl -X POST atlas.code402.dev/v1/submit
+ { "base_url": "https://your-api.com",
+   "title": "Your API" }</pre>
+        <a class="btn btn-primary" href="/sellers/claim">Claim your profile — free</a></div>
+      <div class="acard"><div class="tag">FOR BUILDERS & STANDARDS PEOPLE</div><h3>Build on the open data</h3>
+        <p>Everything here is machine-readable: full catalog dumps, per-service MCP servers, weekly ecosystem reports with sybil-adjusted volume. Open source, MIT.</p>
+        <pre>GET atlas.code402.dev/directory.md
+GET atlas.code402.dev/kaizen/daily
+GET atlas.code402.dev/mcp-directory</pre>
+        <a class="btn" href="https://github.com/89rat/x402-atlas">GitHub →</a></div>
+    </div>
+  </div>
+</section>
+
+<footer><div class="container fgrid">
+  <div>x402 Atlas — measured, not claimed.<br>Payments are non-custodial: buyer → seller, direct.</div>
+  <div class="m">
+    <a href="/llms.txt">llms.txt</a> · <a href="/openapi.json">openapi</a> · <a href="/sitemap.xml">sitemap</a> · <a href="/compliance">compliance</a> · <a href="/reports/state-of-x402">state of x402</a><br>
+    <a href="https://github.com/89rat/x402-atlas">source</a> · index grows hourly · since 2026
+  </div>
+</div></footer>
+
 <script>
-async function run(q) {
-  const el = document.getElementById('results');
-  el.innerHTML = '<p class="muted">Searching…</p>';
-  const res = await fetch(`/v1/search?q=${encodeURIComponent(q)}&limit=25`);
-  const data = await res.json();
-  if (!data.count) { el.innerHTML = '<p class="muted">No results. This query has been logged as demand signal.</p>'; return; }
-  el.innerHTML = data.results.map(h => `
-    <div class="card">
-      <div>
-        <strong>${h.title}</strong> <span class="badge ${h.alive ? 'alive' : 'dead'}">${h.alive ? 'alive' : 'unverified'}</span>
-        <div class="muted">${h.description || ''} · uptime 7d: ${(h.uptime7d*100).toFixed(0)}%${h.latencyMs ? ` · ${h.latencyMs}ms` : ''}</div>
-        <div><a href="${h.baseUrl}${h.endpointPath}" target="_blank" rel="noopener">${h.baseUrl}${h.endpointPath}</a></div>
-      </div>
-      <div class="price">$${h.priceMin ?? '?'}/call</div>
-    </div>`).join('');
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+async function stats() {
+  try {
+    const d = await (await fetch("/v1/stats")).json();
+    document.getElementById("stats").innerHTML = [
+      [d.services.toLocaleString(), "payable services"],
+      [d.alive.toLocaleString(), "verified alive"],
+      [(d.alive && d.endpoints_probed ? Math.round(d.alive / d.endpoints_probed * 100) : 0) + "%", "alive rate"],
+      ["$0", "cost for buyers"],
+      ["2%", "seller fee — that's it"],
+    ].map(([v,k]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join("");
+  } catch {}
 }
-document.getElementById('f').onsubmit = e => { e.preventDefault(); run(document.getElementById('q').value); };
-run('');
+function card(h) {
+  const trust = h.sellerTrust > 0 ? `<span class="badge b-trust">trust ${h.sellerTrust}/100</span>` : "";
+  const cats = (h.categories || []).slice(0,2).map(c => `<span class="badge b-cat">${esc(c)}</span>`).join("");
+  return `<div class="card">
+    <div class="main">
+      <div class="title"><h3>${esc(h.title)}</h3>
+        <span class="badge ${h.alive ? "b-alive" : "b-dead"}">${h.alive ? "● verified alive" : "unverified"}</span>${trust}${cats}</div>
+      <div class="url">${esc(h.baseUrl)}${esc(h.endpointPath)}</div>
+      <div class="desc">${esc(h.description || "Machine-payable x402 endpoint.")}</div>
+    </div>
+    <div class="side">
+      <div class="price">$${h.priceMin ?? "?"}<span>/call</span></div>
+      <div class="meta">${Math.round((h.uptime7d||0)*100)}% 7d${h.latencyMs ? " · " + h.latencyMs + "ms" : ""}</div>
+      <a class="btn" style="font-size:12px;padding:5px 12px" href="${esc(h.baseUrl)}${esc(h.endpointPath)}" target="_blank" rel="noopener">endpoint →</a>
+    </div>
+  </div>`;
+}
+async function run() {
+  const q = document.getElementById("q").value.trim();
+  const alive = document.getElementById("alive").checked;
+  const pmax = document.getElementById("pmax").value;
+  const sort = document.getElementById("sort").value;
+  const el = document.getElementById("results");
+  el.innerHTML = `<div class="load">Searching${q ? " “" + esc(q) + "”" : ""}…</div>`;
+  const params = new URLSearchParams({ q, limit: "25", alive_only: String(alive) });
+  if (pmax) params.set("price_max_usd", pmax);
+  try {
+    const d = await (await fetch("/v1/search?" + params)).json();
+    if (!d.count) { el.innerHTML = `<div class="empty"><div class="big">🔍</div>No services match${q ? " “" + esc(q) + "”" : ""}.<br><span style="font-size:13px;color:var(--dim)">Your query was logged as a demand signal — sellers see what agents ask for.</span></div>`; return; }
+    let rs = d.results;
+    if (sort === "price") rs = [...rs].sort((a,b) => (a.priceMin==null)-(b.priceMin==null) || parseFloat(a.priceMin||"9e9")-parseFloat(b.priceMin||"9e9"));
+    el.innerHTML = `<div class="rhead"><h2>${d.count} service${d.count>1?"s":""}${q ? " for “" + esc(q) + "”" : " in the index"}</h2><span class="meta" style="font-family:var(--mono);font-size:11px;color:var(--dim)">hourly probe-verified</span></div>` + rs.map(card).join("");
+  } catch { el.innerHTML = `<div class="empty">Search failed — the API may be rate-limiting. Retry in a minute.</div>`; }
+}
+document.getElementById("f").onsubmit = e => { e.preventDefault(); run(); };
+["alive","pmax","sort"].forEach(id => document.getElementById(id).addEventListener("change", run));
+stats(); run();
 </script>
 </body>
 </html>
