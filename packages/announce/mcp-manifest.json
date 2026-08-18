@@ -1,0 +1,9 @@
+{
+  "display_name": "x402 Atlas — search machine-payable APIs",
+  "description": "Search 209+ x402 pay-per-call APIs with probe-verified prices, uptime, and on-chain seller trust. Deterministic purchase-policy gate (ACCEPT/REJECT/ESCALATE) before any payment. Plus 194 auto-generated per-service MCP servers.",
+  "type": "http",
+  "url": "https://atlas.code402.dev/mcp",
+  "tools": ["search_x402", "plan_purchase", "get_ecosystem_stats"],
+  "repository": "https://github.com/89rat/x402-atlas",
+  "website": "https://atlas.code402.dev"
+}
