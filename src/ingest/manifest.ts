@@ -5,7 +5,7 @@
 import { z } from "zod";
 
 export interface ParsedManifest {
-  type: "x402" | "openapi" | "llms-txt" | "agent-card";
+  type: "x402" | "openapi" | "llms-txt" | "agent-card" | "m2m1";
   title: string | null;
   description: string;
   categories: string[];
@@ -38,6 +38,7 @@ export async function fetchManifest(baseUrl: string): Promise<{ raw: string | nu
   const candidates: [string, ParsedManifest["type"]][] = [
     ["/.well-known/x402.json", "x402"],
     ["/.well-known/x402", "x402"],
+    ["/v1/services", "m2m1"],
     ["/openapi.json", "openapi"],
     ["/llms.txt", "llms-txt"],
     ["/.well-known/agent.json", "agent-card"],
@@ -126,6 +127,36 @@ export function parseManifest(raw: string, type: ParsedManifest["type"], _root: 
         description: j.description ?? "",
         categories: (j.skills ?? []).map((s) => s.id).filter((x): x is string => !!x),
         endpoints: [],
+      };
+    }
+    // M2M/1 ServiceList (PROTOCOL.md §6.1) — gateway-hosted discovery document
+    case "m2m1": {
+      const j = JSON.parse(raw) as {
+        m2mVersion?: number;
+        services?: {
+          serviceId?: string; name?: string; description?: string;
+          endpoint?: string; method?: string;
+          pricing?: { mode?: string; price?: { amount?: string } };
+        }[];
+      };
+      if (j.m2mVersion !== 1 || !Array.isArray(j.services) || j.services.length === 0) return null;
+      return {
+        type: "m2m1",
+        title: null,
+        description: `${j.services.length} M2M/1 services`,
+        categories: ["m2m1"],
+        endpoints: j.services
+          .filter((s) => typeof s.endpoint === "string")
+          .map((s) => ({
+            path: s.endpoint as string,
+            method: s.method ?? "GET",
+            description: s.name
+              ? `${s.name}${s.pricing?.mode ? ` (${s.pricing.mode}${s.pricing.price?.amount ? ` @ ${s.pricing.price.amount} units` : ""})` : ""}`
+              : undefined,
+            ...(s.pricing?.price?.amount
+              ? { priceUnits: { min: Number.parseInt(s.pricing.price.amount, 10), max: Number.parseInt(s.pricing.price.amount, 10) } }
+              : {}),
+          })),
       };
     }
   }

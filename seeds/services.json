@@ -1,5 +1,24 @@
 [
   {
+    "baseUrl": "https://m2m-gateway.akrivis.workers.dev",
+    "title": "m2m-exchange gateway",
+    "description": "M2M/1 commerce protocol gateway (P0 demo): paid weather + echo APIs, USDC on Base Sepolia via x402.",
+    "categories": [
+      "m2m1",
+      "demo",
+      "gateway"
+    ],
+    "endpoints": [
+      {
+        "path": "/api/weather"
+      },
+      {
+        "path": "/api/echo",
+        "method": "POST"
+      }
+    ]
+  },
+  {
     "baseUrl": "https://code402.dev",
     "title": "code402 (prod)",
     "description": "Deterministic machine-verifiable paid tools with signed receipts: context-distill, VAT check, company number format. Base mainnet USDC.",
