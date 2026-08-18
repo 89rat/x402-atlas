@@ -144,13 +144,54 @@ export default {
       return new Response(body, { headers: { "content-type": "text/plain" } });
     }
 
+    // ---- Agent identity & accumulated state (retention layer) ----
+    if (path === "/v1/agent/register" && req.method === "POST") {
+      const body = (await req.json<Record<string, unknown>>().catch(() => ({}))) as { label?: string };
+      const { registerAgent } = await import("./api/agents");
+      const out = await registerAgent(env, body.label ?? "unnamed-agent");
+      return json({ ...out, note: "Store this api_key now — it is never shown again. Use: Authorization: Bearer <key>" }, 201);
+    }
+    if (path.startsWith("/v1/agent/")) {
+      const { authenticate } = await import("./api/agents");
+      const agent = await authenticate(env, req);
+      if (!agent) return json({ error: "UNAUTHORIZED", hint: "POST /v1/agent/register first" }, 401);
+      if (path === "/v1/agent/me" && req.method === "GET") {
+        const { agentProfile } = await import("./api/agents");
+        return json(await agentProfile(env, agent));
+      }
+      if (path === "/v1/agent/attestation" && req.method === "GET") {
+        const { agentAttestation } = await import("./api/agents");
+        return json(await agentAttestation(env, agent));
+      }
+      if (path === "/v1/agent/policies" && req.method === "POST") {
+        const body = (await req.json<Record<string, unknown>>().catch(() => ({}))) as { name?: string; policy?: unknown };
+        if (!body.name || typeof body.policy !== "object") return json({ error: "name and policy object required" }, 400);
+        const { savePolicy } = await import("./api/agents");
+        await savePolicy(env, agent, body.name, body.policy);
+        return json({ status: "saved" }, 201);
+      }
+      return json({ error: "NOT_FOUND" }, 404);
+    }
+
     if (path === "/v1/plan") {
       const body = await req.json<Record<string, unknown>>();
       const parsed = PlanInput.safeParse(body);
       if (!parsed.success) {
         return json({ error: "INVALID_INPUT", issues: parsed.error.issues }, 400);
       }
-      return json(await planPurchase(env, parsed.data));
+      const decision = await planPurchase(env, parsed.data);
+      // Accumulate state: authenticated agents get decision history (retention §2.1.2)
+      const { authenticate, recordDecision } = await import("./api/agents");
+      const agent = await authenticate(env, req);
+      if (agent && decision.decision !== "ERROR") {
+        ctx.waitUntil(recordDecision(env, agent, {
+          endpoint_url: decision.terms.endpoint_url,
+          decision: decision.decision,
+          reason_code: decision.reason_code,
+          price_usd: decision.terms.price_usd,
+        }));
+      }
+      return json({ ...(agent ? { agent_id: agent.id } : {}), ...decision });
     }
 
     if (path === "/admin/curate") {
@@ -178,6 +219,10 @@ export default {
     if (path === "/reports/state-of-x402") {
       const { stateReportPage } = await import("./api/pages");
       return stateReportPage(env);
+    }
+    if (path === "/sellers/claim" || path === "/claim") {
+      const { claimPage } = await import("./api/pages");
+      return claimPage(env);
     }
     if (path === "/compliance") {
       const { compliancePage } = await import("./api/pages");

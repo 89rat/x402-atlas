@@ -134,6 +134,28 @@ export async function stateReportPage(env: Env): Promise<Response> {
   return stateReport(env, "html");
 }
 
+export async function claimPage(env: Env): Promise<Response> {
+  const sellers = (await env.DB.prepare(
+    `SELECT address, trust_score, settled_volume_usdc FROM sellers WHERE trust_score > 0 ORDER BY trust_score DESC LIMIT 100`,
+  ).all<{ address: string; trust_score: number; settled_volume_usdc: string }>()).results;
+  const rows = sellers.map((s) =>
+    `<tr><td><code>${esc(s.address.slice(0, 8))}…${esc(s.address.slice(-6))}</code></td><td>${s.trust_score}</td><td class="price">$${unitsToUsd(Number(s.settled_volume_usdc))}</td><td><a href="https://atlas.code402.dev/v1/submit">claim</a></td></tr>`,
+  ).join("");
+  const body = `<h2>Claim your seller profile — free</h2>
+<p>Your API already earns on-chain x402 revenue. <strong>Atlas agents search this index before they pay.</strong> Claiming keeps your pricing, uptime, and endpoints current — verified by hourly probes, ranked by your real settled volume.</p>
+<h3>One line, done:</h3>
+<pre><code>npm i @x402-atlas/announce
+node -e "import('@x402-atlas/announce').then(m => m.announce({ baseUrl: 'https://your-api.com', title: 'Your API' }))"</code></pre>
+<p>Or <a href="/v1/submit">submit directly</a> (POST JSON). Verification is automatic: our prober hits your 402 paywall within the hour.</p>
+<h3>Current on-chain sellers</h3>
+<table><tr><th>Wallet</th><th>Trust</th><th>Settled (7d)</th><th></th></tr>${rows}</table>
+<p class="muted">Coming soon (paid, USDC via x402): verified badge, price analytics, buyer-intent feed from our zero-result queries.</p>`;
+  return new Response(
+    page("Claim your x402 seller profile — free | x402 Atlas", "Sellers with on-chain x402 revenue: get discovered by paying AI agents. One-line registration, hourly verified pricing and uptime, ranked by real settled volume.", body),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
 export async function compliancePage(): Promise<Response> {
   const body = `<h2>Compliance posture</h2>
 <p>x402 Atlas is a <strong>non-custodial</strong> discovery and policy layer for machine-to-machine commerce. This page documents our data and compliance position for enterprise review.</p>
