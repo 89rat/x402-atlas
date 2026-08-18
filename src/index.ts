@@ -488,7 +488,7 @@ Reply "unsubscribe" to be excluded from future messages.`;
           ["atlas", "https://atlas.code402.dev/healthz"],
           ["gateway", "https://gateway.code402.dev/healthz"],
           ["code402", "https://code402.dev/healthz"],
-          ["tollbooth", "https://code402-tollbooth.akrivis.workers.dev/healthz"],
+          ["tollbooth", "https://tollbooth.code402.dev/healthz"],
         ];
         const failures: string[] = [];
         for (const [name, url] of targets as [string, string][]) {
