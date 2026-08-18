@@ -183,7 +183,7 @@ export default {
       // Accumulate state: authenticated agents get decision history (retention §2.1.2)
       const { authenticate, recordDecision } = await import("./api/agents");
       const agent = await authenticate(env, req);
-      if (agent && decision.decision !== "ERROR") {
+      if (agent) {
         ctx.waitUntil(recordDecision(env, agent, {
           endpoint_url: decision.terms.endpoint_url,
           decision: decision.decision,
