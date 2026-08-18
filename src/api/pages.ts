@@ -97,7 +97,7 @@ export async function leaderboardPage(env: Env): Promise<Response> {
   );
 }
 
-export async function stateReportPage(env: Env): Promise<Response> {
+export async function stateReport(env: Env, format: "html" | "md"): Promise<Response> {
   const stats = await env.DB.prepare(`SELECT COUNT(*) AS services FROM services`).first<{ services: number }>();
   const eps = await env.DB.prepare(`SELECT COUNT(*) n, SUM(alive) a, AVG(last_latency_ms) lat FROM endpoints WHERE last_probe_at IS NOT NULL`).first<{ n: number; a: number; lat: number | null }>();
   const top = (await env.DB.prepare(`SELECT settled_volume_usdc, settled_tx_count, unique_buyers FROM sellers ORDER BY trust_score DESC LIMIT 5`).all()).results as { settled_volume_usdc: string; settled_tx_count: number; unique_buyers: number }[];
@@ -120,11 +120,18 @@ POST https://atlas.code402.dev/mcp  →  tools: search_x402, plan_purchase, get_
 GET  https://atlas.code402.dev/v1/search?q=web+search
 \`\`\`
 `;
+  if (format === "md") {
+    return new Response(md, { headers: { "content-type": "text/markdown; charset=utf-8" } });
+  }
   return new Response(
     page(`State of x402 — weekly ecosystem report (${week})`, "Weekly on-chain x402 ecosystem report: settled volume, seller leaderboard, endpoint liveness. Auto-generated.",
       `<pre style="white-space:pre-wrap;font-family:inherit">${esc(md)}</pre><p><a href="/reports/state-of-x402.md">Markdown version</a> (for RAG ingestion)</p>`),
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );
+}
+
+export async function stateReportPage(env: Env): Promise<Response> {
+  return stateReport(env, "html");
 }
 
 export async function compliancePage(): Promise<Response> {

@@ -9,6 +9,12 @@ import { handleMcp } from "./mcp/server";
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
 
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
 /** Token-bucket rate limit per client IP (KV, 60s window). Public APIs only. */
 async function rateLimited(env: Env, req: Request, path: string): Promise<boolean> {
   if (!path.startsWith("/v1/") && path !== "/mcp") return false;
@@ -95,7 +101,10 @@ export default {
       const now = Date.now();
       const { slugify } = await import("./ingest/pipeline");
       const title = (body.title ?? new URL(body.base_url).host).slice(0, 80);
-      const id = slugify(title);
+      let id = slugify(title);
+      // Slug collision guard: if another service owns this slug, suffix it
+      const clash = await env.DB.prepare(`SELECT 1 FROM services WHERE id = ?1 AND base_url != ?2`).bind(id, body.base_url).first();
+      if (clash) id = `${id}-${Math.abs(hashStr(body.base_url)) % 10000}`;
       await env.DB.prepare(
         `INSERT INTO services (id, base_url, title, description, categories, submitter, source_url, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, 'submit', ?2, ?6, ?6)
@@ -161,6 +170,10 @@ export default {
     if (path === "/leaderboard") {
       const { leaderboardPage } = await import("./api/pages");
       return leaderboardPage(env);
+    }
+    if (path === "/reports/state-of-x402.md") {
+      const { stateReport } = await import("./api/pages");
+      return stateReport(env, "md");
     }
     if (path === "/reports/state-of-x402") {
       const { stateReportPage } = await import("./api/pages");
