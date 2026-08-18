@@ -1,0 +1,25 @@
+[
+  {
+    "registry": "Smithery (smithery.ai)",
+    "submit": "https://smithery.ai/new",
+    "server": { "name": "x402-atlas", "url": "https://atlas.code402.dev/mcp", "transport": "http",
+      "description": "Search 209+ machine-payable (x402) APIs: verified prices, uptime, on-chain seller trust. Deterministic purchase policy (ACCEPT/REJECT/ESCALATE) before any payment.",
+      "tools": ["search_x402", "plan_purchase", "get_ecosystem_stats"] }
+  },
+  {
+    "registry": "Glama (glama.ai/mcp/servers)",
+    "submit": "https://glama.ai/register-mcp-server",
+    "server": { "name": "x402-atlas", "url": "https://atlas.code402.dev/mcp",
+      "description": "The neutral index of the machine-payable economy — plus 194 auto-generated per-service MCP servers (see /mcp-directory)." }
+  },
+  {
+    "registry": "PulseMCP / MCP Registry (registry.modelcontextprotocol.io)",
+    "submit": "https://github.com/modelcontextprotocol/registry",
+    "server": { "name": "x402-atlas", "url": "https://atlas.code402.dev/mcp" }
+  },
+  {
+    "registry": "code402 tools",
+    "server": { "name": "code402-paid-tools", "url": "https://code402.dev/mcp",
+      "description": "Deterministic paid tools (VAT check, distill, prober) with x402 USDC payment + signed receipts." }
+  }
+]

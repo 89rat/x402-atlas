@@ -29,4 +29,3 @@ export async function announce({ baseUrl, title, description, categories, endpoi
 }
 
 export default announce;
-// npm-publishable as @x402-atlas/announce (scope-owned by 89rat)
