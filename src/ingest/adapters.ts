@@ -38,23 +38,38 @@ interface RawRequirements {
   network?: string;
   asset?: string;
   payTo?: string;
-  maxAmountRequired?: string;
-  amountRequired?: string;
-  maxUnitsRequired?: string;
-  price?: string;
+  /** v2 field name (spec-verified). */
+  amount?: string | number;
+  maxAmountRequired?: string | number;
+  amountRequired?: string | number;
+  maxUnitsRequired?: string | number;
+  price?: string | number;
   facilitatorURL?: string;
   facilitatorUrl?: string;
   [k: string]: unknown;
 }
 
+/** Decode base64 (standard or url-safe) to text; null if invalid. */
+function b64ToText(raw: string): string | null {
+  try {
+    const bin = atob(raw.replace(/-/g, "+").replace(/_/g, "/"));
+    return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+
+/** V2 accepts[] entry: amount (NOT maxAmountRequired per v2 spec). */
 function normalize(
   format: PaywallFormat,
   reqs: RawRequirements | RawRequirements[],
 ): PaywallTerms | null {
   const r = Array.isArray(reqs) ? (reqs[0] ?? null) : reqs;
   if (!r || typeof r !== "object") return null;
+  // Field name per protocol generation (cross-verified against spec):
+  // v2 accepts[] uses `amount`; v1 used `maxAmountRequired`.
   const amount =
-    r.maxAmountRequired ?? r.amountRequired ?? r.maxUnitsRequired ?? r.price ?? null;
+    r.amount ?? r.maxAmountRequired ?? r.amountRequired ?? r.maxUnitsRequired ?? r.price ?? null;
   if (amount === null) return null;
   const units = toUnits(amount);
   return {
@@ -76,23 +91,29 @@ function normalize(
 export function parsePaywall(res: Response, bodyText: string | null): PaywallTerms | null {
   if (res.status !== 402) return null;
 
-  // V2: payment data moved to headers
+  // V2: payment data lives in headers as base64(JSON) per transports-v2/http.md.
+  // PAYMENT-REQUIRED carries PaymentRequired{ x402Version, resource, accepts[] }.
+  // Fallbacks: raw JSON (some deployments), legacy X-PAY.
   const headerRaw =
     res.headers.get("PAYMENT-REQUIRED") ??
     res.headers.get("PAYMENT-REQUIRED-DATA") ??
     res.headers.get("X-PAY");
   if (headerRaw) {
-    try {
-      const parsed = JSON.parse(headerRaw) as unknown;
-      const reqs = Array.isArray(parsed)
-        ? (parsed as RawRequirements[])
-        : ((parsed as { paymentRequirements?: RawRequirements[] }).paymentRequirements ?? [
+    for (const candidate of [b64ToText(headerRaw), headerRaw]) {
+      if (!candidate) continue;
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        const reqs = Array.isArray(parsed)
+          ? (parsed as RawRequirements[])
+          : ((parsed as { accepts?: RawRequirements[]; paymentRequirements?: RawRequirements[] }).accepts ??
+             (parsed as { paymentRequirements?: RawRequirements[] }).paymentRequirements ?? [
             parsed as RawRequirements,
           ]);
-      const t = normalize("v2", reqs);
-      if (t) return t;
-    } catch {
-      // fall through to body parsing
+        const t = normalize("v2", reqs);
+        if (t) return t;
+      } catch {
+        // try next candidate / fall through
+      }
     }
   }
 
@@ -127,6 +148,36 @@ export function parsePaywall(res: Response, bodyText: string | null): PaywallTer
     }
   }
   return null;
+}
+
+/** V2 SettlementResponse (PAYMENT-RESPONSE header, base64 JSON):
+ * { success, transaction, network, payer, errorReason }. */
+export interface SettlementEvidence {
+  success: boolean;
+  transaction: string | null;
+  network: string | null;
+  payer: string | null;
+  errorReason: string | null;
+}
+
+export function parseSettlementResponse(res: Response): SettlementEvidence | null {
+  const raw = res.headers.get("PAYMENT-RESPONSE");
+  if (!raw) return null;
+  const txt = b64ToText(raw) ?? raw;
+  try {
+    const j = JSON.parse(txt) as {
+      success?: boolean; transaction?: string; network?: string; payer?: string; errorReason?: string;
+    };
+    return {
+      success: j.success === true,
+      transaction: j.transaction ?? null,
+      network: j.network ?? null,
+      payer: j.payer?.toLowerCase() ?? null,
+      errorReason: j.errorReason ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export const ADAPTERS_META: { format: PaywallFormat; version: string; specRef: string }[] = [

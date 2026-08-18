@@ -76,3 +76,56 @@ describe("paywall adapters", () => {
     expect(t?.network).toBe("eip155:8453");
   });
 });
+
+describe("x402 v2 wire format (spec-verified shapes)", () => {
+  const b64 = (o: unknown) =>
+    btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  it("parses PAYMENT-REQUIRED: base64(PaymentRequired) with v2 `amount` field", () => {
+    const payload = {
+      x402Version: 2,
+      error: "PAYMENT-SIGNATURE header is required",
+      resource: { url: "https://api.example.com/data", mimeType: "application/json" },
+      accepts: [{
+        scheme: "exact", network: "base", amount: "5000",
+        asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        payTo: "0xAbC1230000000000000000000000000000000123",
+        maxTimeoutSeconds: 60, extra: null,
+      }],
+    };
+    const t = parsePaywall(new Response(null, { status: 402, headers: { "PAYMENT-REQUIRED": b64(payload) } }), null);
+    expect(t?.format).toBe("v2");
+    expect(t?.priceUnits.min).toBe(5000); // v2 `amount`, not maxAmountRequired
+    expect(t?.payTo).toBe("0xabc1230000000000000000000000000000000123");
+    expect(t?.scheme).toBe("exact");
+  });
+
+  it("parses PAYMENT-REQUIRED even when a deployment sends raw JSON", () => {
+    const t = parsePaywall(new Response(null, {
+      status: 402,
+      headers: { "PAYMENT-REQUIRED": JSON.stringify({ accepts: [{ scheme: "exact", amount: "1000", network: "base" }] }) },
+    }), null);
+    expect(t?.priceUnits.min).toBe(1000);
+  });
+
+  it("parseSettlementResponse: base64(SettlementResponse) evidence", async () => {
+    const { parseSettlementResponse } = await import("../src/ingest/adapters");
+    const ok = new Response(null, { status: 200, headers: { "PAYMENT-RESPONSE": b64({
+      success: true, transaction: "0xabc", network: "base", payer: "0xPAYER",
+    }) } });
+    const ev = parseSettlementResponse(ok);
+    expect(ev?.success).toBe(true);
+    expect(ev?.transaction).toBe("0xabc");
+    expect(ev?.payer).toBe("0xpayer");
+    const fail = new Response(null, { status: 402, headers: { "PAYMENT-RESPONSE": b64({
+      success: false, transaction: "", network: "base", payer: "", errorReason: "insufficient_funds",
+    }) } });
+    expect(parseSettlementResponse(fail)?.errorReason).toBe("insufficient_funds");
+  });
+
+  it("v1 maxAmountRequired fixtures still parse (dual-rail transition)", () => {
+    // existing v1 test remains green — both generations coexist
+    const t = parsePaywall(res(402), JSON.stringify({ accepts: [{ scheme: "exact", maxAmountRequired: "5000" }] }));
+    expect(t?.priceUnits.min).toBe(5000);
+  });
+});
