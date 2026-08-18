@@ -43,6 +43,8 @@ export interface Env {
   CRAWL_QUEUE: Queue<QueueMessage>;
   ASSETS: Fetcher;
   ADMIN_TOKEN?: string;
+  /** Cloudflare Email Service binding (transactional sends from code402.dev). */
+  EMAIL?: SendEmail;
   ATLAS_SIGNING_KEY?: string;
 }
 

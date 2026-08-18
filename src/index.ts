@@ -9,6 +9,15 @@ import { handleMcp } from "./mcp/server";
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
 
+/** Timing-safe admin-token comparison (workers-best-practices security rule). */
+async function tokenOk(env: { ADMIN_TOKEN?: string }, provided: string | null): Promise<boolean> {
+  if (!env.ADMIN_TOKEN || !provided) return !env.ADMIN_TOKEN && !provided;
+  const a = new TextEncoder().encode(env.ADMIN_TOKEN);
+  const b = new TextEncoder().encode(provided);
+  if (a.length !== b.length) return false;
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
 function hashStr(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -221,7 +230,7 @@ export default {
 
     if (path === "/admin/kaizen") {
       const token = url.searchParams.get("token");
-      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
       const { dailyKaizen } = await import("./ingest/kaizen");
       await dailyKaizen(env);
       return json({ status: "snapshot taken" });
@@ -232,13 +241,13 @@ export default {
     }
     if (path === "/admin/bazaar") {
       const token = url.searchParams.get("token");
-      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
       const { ingestBazaar } = await import("./ingest/bazaar");
       return json(await ingestBazaar(env));
     }
     if (path === "/admin/curate") {
       const token = url.searchParams.get("token");
-      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
       const { curateFromLeaderboard } = await import("./ingest/curate");
       return json(await curateFromLeaderboard(env));
     }
@@ -366,7 +375,7 @@ export default {
 
     if (path === "/admin/indexnow") {
       const token = url.searchParams.get("token");
-      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
       const urls = ["https://atlas.code402.dev/", "https://atlas.code402.dev/services", "https://atlas.code402.dev/leaderboard", "https://atlas.code402.dev/directory.md", "https://atlas.code402.dev/reports/state-of-x402", "https://atlas.code402.dev/compliance", "https://atlas.code402.dev/sellers/claim"];
       const res = await fetch("https://api.indexnow.org/indexnow", {
         method: "POST", headers: { "content-type": "application/json" },
@@ -399,7 +408,7 @@ export default {
     // Admin: run pipeline inline (ops/testing — protects with ADMIN_TOKEN if set)
     if (path === "/admin/crawl") {
       const token = url.searchParams.get("token");
-      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
       if (url.searchParams.get("bootstrap") === "1") await ensureSeeds(env);
       const serviceId = url.searchParams.get("service");
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 5), 20);
@@ -430,6 +439,37 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
       await ensureSeeds(env);
+      // Health alerting: check every property; email on failure (deduped 1/hour via KV).
+      try {
+        const targets = [
+          ["atlas", "https://atlas.code402.dev/healthz"],
+          ["gateway", "https://gateway.code402.dev/healthz"],
+          ["code402", "https://code402.dev/healthz"],
+          ["tollbooth", "https://code402-tollbooth.akrivis.workers.dev/healthz"],
+        ];
+        const failures: string[] = [];
+        for (const [name, url] of targets as [string, string][]) {
+          try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+            if (r.status !== 200) failures.push(`${name}: HTTP ${r.status}`);
+          } catch (e) {
+            failures.push(`${name}: ${e instanceof Error ? e.message : "unreachable"}`);
+          }
+        }
+        const dedupeKey = `alert:${Math.floor(Date.now() / 3600_000)}`;
+        const alreadyAlerted = await env.CACHE.get(dedupeKey);
+        if (failures.length > 0 && !alreadyAlerted && env.EMAIL) {
+          await env.EMAIL.send({
+            to: "drjsarat@gmail.com",
+            from: { email: "alerts@code402.dev", name: "x402 Atlas Monitoring" },
+            subject: `[ALERT] ${failures.length} health check(s) failing`,
+            text: `Health check failures at ${new Date().toISOString()}:\n\n${failures.join("\n")}\n\n— atlas.code402.dev cron monitor (hourly, deduped)`,
+            html: `<h2>Health check failures</h2><p>${new Date().toISOString()}</p><pre>${failures.join("\n")}</pre>`,
+          });
+          await env.CACHE.put(dedupeKey, "1", { expirationTtl: 3600 });
+          console.error("HEALTH ALERT SENT", failures);
+        }
+      } catch (e) { console.error("health alerting failed", e); }
       // Daily kaizen (02:00 UTC): bazaar ingestion + metrics snapshot
       if (new Date().getUTCHours() === 2) {
         try {
