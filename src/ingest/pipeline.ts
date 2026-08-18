@@ -105,6 +105,38 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
   const { probeEndpoint } = await import("./prober");
   let result = await probeEndpoint(row.base_url, row.path, row.method, row.probe_body ?? undefined);
 
+  // Fallback 0: catalog-verified (bazaar/leaderboard services whose endpoints
+  // don't answer a bare GET with a clean 402 — auth-gated POSTs etc). The catalog
+  // price + settled-volume evidence stands; the probe failure is recorded, not
+  // treated as death. Distinct evidence tier: 'catalog' not 'probe'.
+  if (!result.ok) {
+    const svc = await env.DB.prepare(
+      `SELECT submitter FROM services WHERE id = (SELECT service_id FROM endpoints WHERE id = ?1)`,
+    ).bind(endpointId).first<{ submitter: string }>();
+    if (svc && (svc.submitter === "bazaar" || svc.submitter === "leaderboard" || svc.submitter === "leaderboard-origin")) {
+      const cat = await env.DB.prepare(
+        `SELECT price_min_units, COALESCE(paywall_scheme,'exact') scheme FROM endpoints WHERE id = ?1 AND price_min_units IS NOT NULL`,
+      ).bind(endpointId).first<{ price_min_units: number; scheme: string }>();
+      if (cat) {
+        result = {
+          ok: true,
+          status: result.status,
+          terms: {
+            format: "v1",
+            scheme: cat.scheme === "upto" ? "upto" : "exact",
+            priceUnits: { min: cat.price_min_units, max: cat.price_min_units },
+            network: "eip155:8453",
+            asset: null,
+            payTo: null,
+            facilitatorUrl: null,
+          },
+          latencyMs: result.latencyMs,
+          error: `catalog-verified (probe inconclusive: ${result.error ?? result.status})`,
+        };
+      }
+    }
+  }
+
   // Fallback: same-account workers.dev subrequests can be intercepted by the asset
   // router (observed: 404 while direct requests 402). If direct challenge failed,
   // fall back to the service's authoritative /.well-known/x402.json manifest.
