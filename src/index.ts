@@ -47,6 +47,21 @@ export default {
 
     if (path === "/mcp" && req.method === "POST") return handleMcp(env, req);
 
+    // MCP Factory: one MCP server per catalog service (POST /mcp/{serviceId})
+    if (path.startsWith("/mcp/") && req.method === "POST" && !path.includes(".")) {
+      const { handleFactoryMcp } = await import("./mcp/factory");
+      return handleFactoryMcp(env, decodeURIComponent(path.slice("/mcp/".length).replace(/\/+$/, "")), req);
+    }
+    if (path === "/mcp-directory") {
+      const { mcpDirectory } = await import("./mcp/factory");
+      const d = await mcpDirectory(env);
+      if (url.searchParams.get("format") === "html") {
+        const rows = d.servers.slice(0, 500).map((sv) => `<tr><td><a href="/services/${sv.serviceId}">${sv.title}</a></td><td><code>POST /mcp/${sv.serviceId}</code></td></tr>`).join("\n");
+        return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>${d.count} MCP servers — x402 Atlas</title><meta name="description" content="Every indexed x402 service has its own dedicated MCP server: verified pricing, live probes, pay instructions. One endpoint per service, auto-generated."></head><body style="font-family:system-ui;max-width:800px;margin:2rem auto"><h1>${d.count} dedicated MCP servers</h1><p>Every service in the Atlas index automatically gets its own MCP endpoint. Catalog grows → servers grow. <a href="?format=json">JSON</a> · <a href="/directory.md">full directory</a></p><table style="width:100%;border-collapse:collapse">${rows}</table></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      return json(d);
+    }
+
     if (path === "/v1/search") {
       const q = url.searchParams.get("q") ?? "";
       const chain = url.searchParams.get("chain") ?? undefined;
