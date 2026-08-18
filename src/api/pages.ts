@@ -8,11 +8,12 @@ import { search } from "./search";
 
 const BASE = "https://atlas.code402.dev";
 
-function page(title: string, desc: string, body: string, canonical = BASE): string {
+function page(title: string, desc: string, body: string, canonical = BASE, jsonLd?: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>` : ""}
 <title>${title}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="${desc}">
@@ -57,8 +58,19 @@ export async function servicesPage(env: Env): Promise<Response> {
 <ul>${eps}</ul></div>`;
     })
     .join("\n");
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org", "@type": "ItemList",
+    name: "x402 Services Directory",
+    description: "Verified machine-payable APIs with probe-measured prices and on-chain trust scores",
+    numberOfItems: byService.size,
+    itemListElement: [...byService.values()].slice(0, 30).map((hs, i) => ({
+      "@type": "ListItem", position: i + 1,
+      item: { "@type": "Service", name: hs[0]!.title, description: hs[0]!.description, url: hs[0]!.baseUrl,
+        offers: { "@type": "Offer", price: hs[0]!.priceMin ?? "0", priceCurrency: "USDC" } },
+    })),
+  }).replace(/</g, "\u003c");
   return new Response(
-    page("x402 Services — every verified machine-payable API", "Directory of x402 pay-per-call APIs with probe-verified prices, uptime, and on-chain trust scores.", `<h2>Verified x402 services (${byService.size})</h2>${cards}`),
+    page("x402 Services — every verified machine-payable API", "Directory of x402 pay-per-call APIs with probe-verified prices, uptime, and on-chain trust scores.", `<h2>Verified x402 services (${byService.size})</h2>${cards}`, BASE, jsonLd),
     { headers: { "content-type": "text/html; charset=utf-8" } },
   );
 }

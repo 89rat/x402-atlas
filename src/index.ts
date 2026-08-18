@@ -132,7 +132,17 @@ export default {
       const hits = await search(env, { q: "", aliveOnly: false, limit: 100 });
       const body = [
         "# x402 Atlas",
-        "> Live search engine for x402 pay-per-call API services. Verified liveness, measured USDC prices.",
+        "> Live search engine for x402 pay-per-call API services. Verified liveness, measured USDC prices, on-chain seller trust. The neutral index of the machine-payable economy.",
+        "",
+        "## The magnet (machine-ingest everything from here)",
+        "- Full directory: https://atlas.code402.dev/directory.md",
+        "- Self-manifest: https://atlas.code402.dev/.well-known/x402.json",
+        "- Weekly ecosystem report: https://atlas.code402.dev/reports/state-of-x402.md",
+        "",
+        "## Ecosystem",
+        "- Sell any API to agents: https://code402.dev (settlement layer, non-custodial)",
+        "- M2M/1 protocol gateway: https://gateway.code402.dev/v1/services (marketplace, $0.001-$0.005/call)",
+        "- Seller leaderboard (on-chain trust): /leaderboard",
         "",
         "## API",
         "- GET /v1/search?q=web+search&chain=eip155:8453&price_max_usd=0.01 — ranked JSON results",
@@ -302,6 +312,34 @@ export default {
         signature_algorithm: "HMAC-SHA256",
       };
       return json({ ...unsigned, signature: await hmacSign(env, canonicalInvitationFields(unsigned)) });
+    }
+
+    if (path === "/.well-known/x402.json" || path === "/.well-known/x402") {
+      return json({
+        name: "x402 Atlas",
+        description: "The neutral discovery + intelligence layer for the machine-payable economy: hourly-verified prices, uptime, on-chain seller trust. Free search API + MCP; seller registration in one line.",
+        mcp: "https://atlas.code402.dev/mcp",
+        api: "https://atlas.code402.dev/v1/search",
+        directory: "https://atlas.code402.dev/directory.md",
+        llms_txt: "https://atlas.code402.dev/llms.txt",
+        openapi: "https://atlas.code402.dev/openapi.json",
+        ecosystem: ["https://code402.dev", "https://gateway.code402.dev/v1/services"],
+        register: "https://atlas.code402.dev/sellers/claim",
+      });
+    }
+
+    // The full machine catalog: every indexed service, compact markdown.
+    // This is the document LLMs and RAG pipelines ingest wholesale.
+    if (path === "/directory.md") {
+      const hits = await search(env, { q: "", aliveOnly: false, limit: 500 });
+      const md = [
+        "# The x402 Atlas Directory",
+        `> ${hits.length}+ payable endpoints for AI agents. Measured prices (hourly 402 probes), uptime, on-chain seller trust. Generated ${new Date().toISOString().slice(0, 10)}.`,
+        "> Agents: search live via MCP (atlas.code402.dev/mcp) or GET /v1/search?q=. Sellers: claim your profile at /sellers/claim.",
+        "",
+        ...hits.map((h) => `- **${h.title}** (${h.baseUrl}${h.endpointPath}) — $${h.priceMin ?? "?"}/call · trust ${h.sellerTrust}/100 · ${h.alive ? "verified" : "unverified"} — ${h.description}`),
+      ].join("\n");
+      return new Response(md, { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
 
     if (path === "/robots.txt") {
