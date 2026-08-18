@@ -208,8 +208,8 @@ async function run() {
     if (!d.count) { el.innerHTML = `<div class="empty"><div class="big">🔍</div>No services match${q ? " “" + esc(q) + "”" : ""}.<br><span style="font-size:13px;color:var(--dim)">Your query was logged as a demand signal — sellers see what agents ask for.</span></div>`; return; }
     let rs = d.results;
     if (sort === "price") { rs = [...rs].sort((a,b) => (a.priceMin==null)-(b.priceMin==null) || parseFloat(a.priceMin||"9e9")-parseFloat(b.priceMin||"9e9")); }
-    const total = d.count, shown = rs.length;
-    el.innerHTML = `<div class="rhead"><h2>${total} service${total>1?"s":""}${q ? " for “" + esc(q) + "”" : " in the index"}${total > shown ? " <span style='color:var(--dim);font-weight:400'>(showing ${shown})</span>" : ""}</h2><span class="meta" style="font-family:var(--mono);font-size:11px;color:var(--dim)">hourly probe-verified</span></div>` + rs.map(card).join("");
+    const total = d.total_matching_services ?? d.count, shown = rs.length;
+    el.innerHTML = `<div class="rhead"><h2>${total} service${total>1?"s":""}${q ? " for “" + esc(q) + "”" : " in the index"}${total > shown ? " <span style='color:var(--dim);font-weight:400'>(showing " + shown + ")</span>" : ""}</h2><span class="meta" style="font-family:var(--mono);font-size:11px;color:var(--dim)">hourly probe-verified</span></div>` + rs.map(card).join("");
   } catch { el.innerHTML = `<div class="empty">Search failed — the API may be rate-limiting. Retry in a minute.</div>`; }
 }
 document.getElementById("f").onsubmit = e => { e.preventDefault(); run(); };

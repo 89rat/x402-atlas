@@ -95,7 +95,10 @@ export default {
         ).bind(Date.now(), q, chain ?? null, priceMaxUsd !== null ? Math.round(Number(priceMaxUsd) * 1e6) : null, aliveOnly ? 1 : 0, hits.length, hits.length === 0 ? 1 : 0).run(),
       );
 
-      const payload = { query: { q, chain, price_max_usd: priceMaxUsd, alive_only: aliveOnly }, count: hits.length, results: hits };
+      const totalRow = await env.DB.prepare(
+        `SELECT COUNT(DISTINCT s.id) n FROM services s LEFT JOIN endpoints e ON e.service_id = s.id WHERE (?2 = 0 OR e.alive = 1)`,
+      ).bind(aliveOnly ? 1 : 0, aliveOnly ? 1 : 0).first<{ n: number }>();
+      const payload = { query: { q, chain, price_max_usd: priceMaxUsd, alive_only: aliveOnly }, count: hits.length, total_matching_services: totalRow?.n ?? hits.length, results: hits };
       ctx.waitUntil(env.CACHE.put(cacheKey, JSON.stringify(payload), { expirationTtl: 60 }));
       return json(payload);
     }

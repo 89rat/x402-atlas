@@ -22,9 +22,12 @@ await check("S3: appears in search after submit", async () => {
   const { b } = await j(A + "/v1/search?q=e2e&alive_only=false"); assert(b.results?.some(h => h.serviceId === sellerId), "not in results"); return "listed"; });
 
 const gSeller = "e2e-" + Date.now().toString(36);
+// Unique wallet per run: the sellers.wallet column is UNIQUE, and reusing a
+// fixed test wallet across runs correctly 500s (constraint) — fresh each time.
+const gWallet = "0x" + (Date.now().toString(16) + Math.floor(Math.random() * 1e6).toString(16)).padEnd(40, "9").slice(0, 40);
 await check("S4: gateway marketplace registration", async () => {
   const { s, b } = await j(G + "/v1/sellers", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: gSeller, wallet: "0x9999999999999999999999999999999999999999", name: "E2E Shop" }) });
+    body: JSON.stringify({ id: gSeller, wallet: gWallet, name: "E2E Shop" }) });
   assert(s === 201, s + ""); return b.storefront; });
 
 await check("S5: list a service -> storefront listing", async () => {
@@ -34,7 +37,7 @@ await check("S5: list a service -> storefront listing", async () => {
 
 await check("S6: listing 402 pays SELLER wallet (non-custodial)", async () => {
   const r = await fetch(G + `/s/${gSeller}/demo`); const b = await r.json().catch(() => ({}));
-  assert(r.status === 402 && b.accepts?.[0]?.payTo?.toLowerCase() === "0x9999999999999999999999999999999999999999", r.status + ""); 
+  assert(r.status === 402 && b.accepts?.[0]?.payTo?.toLowerCase() === gWallet, r.status + ""); 
   return "payTo=seller $" + (parseInt(b.accepts[0].maxAmountRequired) / 1e6); });
 
 await check("S7: GET /v1/sellers registration guide (no 404)", async () => {
