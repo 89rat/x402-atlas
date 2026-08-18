@@ -342,6 +342,20 @@ export default {
       return new Response(md, { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
 
+    // IndexNow key file — instant search-engine notification on updates.
+    if (path === "/atlas4f3110dd16e7cbce2625e3df34b593f8.txt") return new Response("atlas4f3110dd16e7cbce2625e3df34b593f8\n", { headers: { "content-type": "text/plain" } });
+
+    if (path === "/admin/indexnow") {
+      const token = url.searchParams.get("token");
+      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      const urls = ["https://atlas.code402.dev/", "https://atlas.code402.dev/services", "https://atlas.code402.dev/leaderboard", "https://atlas.code402.dev/directory.md", "https://atlas.code402.dev/reports/state-of-x402", "https://atlas.code402.dev/compliance", "https://atlas.code402.dev/sellers/claim"];
+      const res = await fetch("https://api.indexnow.org/indexnow", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host: "atlas.code402.dev", key: "atlas4f3110dd16e7cbce2625e3df34b593f8", keyLocation: "https://atlas.code402.dev/atlas4f3110dd16e7cbce2625e3df34b593f8.txt", urlList: urls }),
+      });
+      return json({ pinged: urls.length, indexnow_status: res.status });
+    }
+
     if (path === "/robots.txt") {
       return new Response(
         `User-agent: *\nAllow: /\n\n# AI crawlers and RAG pipelines explicitly welcome\nUser-agent: GPTBot\nAllow: /\nUser-agent: ClaudeBot\nAllow: /\nUser-agent: PerplexityBot\nAllow: /\nUser-agent: Bytespider\nAllow: /\n\nSitemap: https://atlas.code402.dev/sitemap.xml\n`,
