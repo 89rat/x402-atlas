@@ -1,0 +1,11 @@
+{
+  "name": "@x402-atlas/announce",
+  "version": "0.1.0",
+  "description": "One-line registration of your x402 service into the Atlas index (atlas.code402.dev) — get discovered by paying AI agents.",
+  "type": "module",
+  "main": "index.js",
+  "bin": { "x402-atlas-announce": "./cli.js" },
+  "keywords": ["x402", "http402", "ai-agents", "payments", "usdc", "discovery", "mcp"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/akrivis/x402-atlas" }
+}

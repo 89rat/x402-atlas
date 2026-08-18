@@ -1,0 +1,142 @@
+/** Server-rendered, crawler-visible HTML pages (SEO + LLM corpus seeding).
+ *  The SPA stays for interactivity; these pages make Atlas *findable*. */
+import type { Env } from "../lib/types";
+import { unitsToUsd } from "../ingest/adapters";
+import { sanitizeSellerText } from "../lib/sanitize";
+import type { SearchHit } from "./search";
+import { search } from "./search";
+
+const BASE = "https://atlas.code402.dev";
+
+function page(title: string, desc: string, body: string, canonical = BASE): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${title}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="${desc}">
+<link rel="canonical" href="${canonical}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${desc}">
+<meta property="og:type" content="website">
+<style>
+body{font-family:ui-sans-serif,system-ui;max-width:900px;margin:0 auto;padding:1.5rem;color:#1c2333;line:#333}
+.card{border:1px solid #dde;border-radius:8px;padding:1rem 1.2rem;margin:.7rem 0}
+.price{color:#0a7d3f;font-weight:600}.muted{color:#67707f;font-size:.9rem}
+.badge{font-size:.75rem;background:#e7f6ee;color:#0a7d3f;padding:.1rem .5rem;border-radius:999px}
+h1 a,h2 a{color:#0b62d6;text-decoration:none}
+table{border-collapse:collapse;width:100%}td,th{padding:.4rem .6rem;border-bottom:1px solid #e8ebf3;text-align:left}
+</style>
+</head>
+<body>
+<header><h1>🧭 <a href="/">x402 Atlas</a></h1>
+<p class="muted">Live, verified search for machine-payable (HTTP 402) APIs. Measured prices · uptime · on-chain trust. <a href="/llms.txt">llms.txt</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/mcp">MCP</a> · <a href="/leaderboard">Seller Leaderboard</a></p>
+<hr></header>
+${body}
+<footer><hr><p class="muted">Data: hourly liveness probes + on-chain settled USDC volume. Free API: <code>GET /v1/search?q=web+search</code>. This page is machine-readable: <a href="/sitemap.xml">sitemap</a>.</p></footer>
+</body></html>`;
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export async function servicesPage(env: Env): Promise<Response> {
+  const hits = await search(env, { q: "", aliveOnly: false, limit: 200 });
+  const byService = new Map<string, SearchHit[]>();
+  for (const h of hits) byService.set(h.serviceId, [...(byService.get(h.serviceId) ?? []), h]);
+  const cards = [...byService.entries()]
+    .map(([, hs]) => {
+      const h = hs[0]!;
+      const best = hs.reduce((a, b) => (a.priceMin !== null && (b.priceMin === null || Number(a.priceMin) <= Number(b.priceMin)) ? a : b));
+      const eps = hs.slice(0, 5).map((e) => `<li><a href="${esc(e.baseUrl + e.endpointPath)}">${esc(e.endpointPath)}</a> — $${e.priceMin ?? "?"}/call ${e.alive ? '<span class="badge">alive</span>' : ""}</li>`).join("");
+      return `<div class="card"><h3><a href="/services/${esc(h.serviceId)}">${esc(h.title)}</a> ${h.alive ? '<span class="badge">verified alive</span>' : ""}</h3>
+<p>${esc(h.description || "Machine-payable x402 API.")}</p>
+<p class="muted">from <span class="price">$${best.priceMin ?? "?"}/call</span> · uptime 7d ${(h.uptime7d * 100).toFixed(0)}% · trust ${h.sellerTrust}/100</p>
+<ul>${eps}</ul></div>`;
+    })
+    .join("\n");
+  return new Response(
+    page("x402 Services — every verified machine-payable API", "Directory of x402 pay-per-call APIs with probe-verified prices, uptime, and on-chain trust scores.", `<h2>Verified x402 services (${byService.size})</h2>${cards}`),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
+export async function serviceDetailPage(env: Env, id: string): Promise<Response> {
+  const hits = await search(env, { q: "", aliveOnly: false, limit: 500 });
+  const hs = hits.filter((h) => h.serviceId === id);
+  if (!hs.length) return new Response("Not found", { status: 404 });
+  const h = hs[0]!;
+  const rows = hs.map((e) => `<tr><td><a href="${esc(e.baseUrl + e.endpointPath)}">${esc(e.baseUrl.replace(/^https?:\/\//, ""))}${esc(e.endpointPath)}</a></td><td>${e.alive ? '<span class="badge">alive</span>' : "unverified"}</td><td class="price">$${e.priceMin ?? "?"}</td><td>${(e.uptime7d * 100).toFixed(0)}%</td><td>${e.latencyMs ?? "?"}ms</td></tr>`).join("");
+  return new Response(
+    page(`${h.title} — x402 API pricing & liveness`, `${h.title}: ${sanitizeSellerText(h.description, 150)}. Verified price $${h.priceMin ?? "?"}/call via x402 (USDC).`,
+      `<h2>${esc(h.title)}</h2><p>${esc(h.description)}</p>
+<p class="muted">Trust score ${h.sellerTrust}/100 · Base URL <a href="${esc(h.baseUrl)}">${esc(h.baseUrl)}</a></p>
+<h3>Payable endpoints</h3><table><tr><th>Endpoint</th><th>Status</th><th>Price/call</th><th>Uptime 7d</th><th>Latency</th></tr>${rows}</table>
+<h3>Pay from any agent</h3><p>Send any HTTP request; the 402 challenge returns x402 payment terms (USDC on Base). Or ask your agent: <code>search_x402("${esc(h.title.toLowerCase())}")</code> via the <a href="/mcp">Atlas MCP server</a>.</p>`,
+      `${BASE}/services/${id}`),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
+export async function leaderboardPage(env: Env): Promise<Response> {
+  const rows = (await env.DB.prepare(
+    `SELECT address, settled_volume_usdc, settled_tx_count, unique_buyers, trust_score
+     FROM sellers WHERE trust_score > 0 ORDER BY trust_score DESC LIMIT 100`,
+  ).all<{ address: string; settled_volume_usdc: string; settled_tx_count: number; unique_buyers: number; trust_score: number }>()).results;
+  const trs = rows
+    .map((s, i) => `<tr><td>${i + 1}</td><td><code>${esc(s.address.slice(0, 10))}…${esc(s.address.slice(-6))}</code></td><td>${s.trust_score}</td><td class="price">$${unitsToUsd(Number(s.settled_volume_usdc))}</td><td>${s.settled_tx_count.toLocaleString()}</td><td>${s.unique_buyers.toLocaleString()}</td></tr>`)
+    .join("");
+  return new Response(
+    page("x402 Seller Leaderboard — on-chain settled USDC volume", "Ranking of x402 API sellers by verified on-chain settlement volume, buyer count, and trust score. Updated weekly.",
+      `<h2>On-chain seller leaderboard</h2>
+<p class="muted">Measured from settled transferWithAuthorization (EIP-3009) USDC transfers on Base — not self-reported.</p>
+<table><tr><th>#</th><th>Wallet</th><th>Trust</th><th>Settled (7d)</th><th>Calls</th><th>Buyers</th></tr>${trs}</table>`),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
+export async function stateReportPage(env: Env): Promise<Response> {
+  const stats = await env.DB.prepare(`SELECT COUNT(*) AS services FROM services`).first<{ services: number }>();
+  const eps = await env.DB.prepare(`SELECT COUNT(*) n, SUM(alive) a, AVG(last_latency_ms) lat FROM endpoints WHERE last_probe_at IS NOT NULL`).first<{ n: number; a: number; lat: number | null }>();
+  const top = (await env.DB.prepare(`SELECT settled_volume_usdc, settled_tx_count, unique_buyers FROM sellers ORDER BY trust_score DESC LIMIT 5`).all()).results as { settled_volume_usdc: string; settled_tx_count: number; unique_buyers: number }[];
+  const totalVol = top.reduce((a, s) => a + Number(s.settled_volume_usdc), 0);
+  const week = new Date().toISOString().slice(0, 10);
+  const md = `# State of x402 — ${week}
+> Auto-generated by x402 Atlas (https://atlas.code402.dev) from hourly liveness probes and on-chain settlement data.
+
+- Services indexed: **${stats?.services ?? 0}**
+- Endpoints probed: **${eps?.n ?? 0}** — alive: **${eps?.a ?? 0}** (${eps?.n ? Math.round(((eps.a ?? 0) / eps.n) * 100) : 0}%)
+- Median probe latency: ${eps?.lat != null ? Math.round(eps.lat) + "ms" : "n/a"}
+- Top-5 seller settled volume (7d, on-chain USDC): **$${unitsToUsd(totalVol)}**
+
+## Top sellers (by trust score)
+${top.map((s, i) => `${i + 1}. $${unitsToUsd(Number(s.settled_volume_usdc))} settled · ${s.settled_tx_count.toLocaleString()} calls · ${s.unique_buyers.toLocaleString()} buyers`).join("\n")}
+
+## For agents
+\`\`\`
+POST https://atlas.code402.dev/mcp  →  tools: search_x402, plan_purchase, get_ecosystem_stats
+GET  https://atlas.code402.dev/v1/search?q=web+search
+\`\`\`
+`;
+  return new Response(
+    page(`State of x402 — weekly ecosystem report (${week})`, "Weekly on-chain x402 ecosystem report: settled volume, seller leaderboard, endpoint liveness. Auto-generated.",
+      `<pre style="white-space:pre-wrap;font-family:inherit">${esc(md)}</pre><p><a href="/reports/state-of-x402.md">Markdown version</a> (for RAG ingestion)</p>`),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
+export async function sitemapXml(env: Env): Promise<Response> {
+  const hits = await search(env, { q: "", aliveOnly: false, limit: 200 });
+  const ids = [...new Set(hits.map((h) => h.serviceId))];
+  const urls = [
+    `${BASE}/`,
+    `${BASE}/services`,
+    `${BASE}/leaderboard`,
+    `${BASE}/reports/state-of-x402`,
+    ...ids.map((id) => `${BASE}/services/${id}`),
+  ];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `<url><loc>${u}</loc><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>`;
+  return new Response(xml, { headers: { "content-type": "application/xml" } });
+}

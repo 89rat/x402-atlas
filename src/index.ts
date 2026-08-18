@@ -62,10 +62,37 @@ export default {
       return json({ services: s?.services ?? 0, endpoints_probed: e?.endpoints ?? 0, alive: e?.alive ?? 0, zero_result_queries: zeroQ?.zero ?? 0 });
     }
     if (path === "/v1/submit" && req.method === "POST") {
-      const body = await req.json<{ base_url?: string; note?: string }>();
+      const body = await req.json<{
+        base_url?: string; title?: string; description?: string;
+        categories?: string[]; endpoints?: { path: string; method?: string }[]; note?: string;
+      }>();
       if (!body.base_url || !/^https:\/\//.test(body.base_url)) return json({ error: "base_url (https) required" }, 400);
-      await env.DB.prepare(`INSERT INTO submissions (base_url, note, created_at) VALUES (?1, ?2, ?3)`).bind(body.base_url, body.note ?? null, Date.now()).run();
-      return json({ status: "queued" }, 201);
+      const now = Date.now();
+      const { slugify } = await import("./ingest/pipeline");
+      const title = (body.title ?? new URL(body.base_url).host).slice(0, 80);
+      const id = slugify(title);
+      await env.DB.prepare(
+        `INSERT INTO services (id, base_url, title, description, categories, submitter, source_url, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'submit', ?2, ?6, ?6)
+         ON CONFLICT(base_url) DO UPDATE SET updated_at = ?6`,
+      )
+        .bind(id, body.base_url, title, body.description ?? "", JSON.stringify(body.categories ?? []), now)
+        .run();
+      for (const e of body.endpoints ?? []) {
+        await env.DB.prepare(
+          `INSERT INTO endpoints (id, service_id, path, method, created_at, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?5) ON CONFLICT(service_id, path, method) DO NOTHING`,
+        ).bind(`${id}:${slugify(e.path)}`, id, e.path, e.method ?? "GET", now).run();
+      }
+      await env.DB.prepare(`INSERT INTO submissions (base_url, note, status, created_at) VALUES (?1, ?2, 'approved', ?3)`)
+        .bind(body.base_url, body.note ?? null, now).run();
+      // Probe immediately so the listing shows verified data fast
+      ctx.waitUntil((async () => {
+        const { ingestService } = await import("./ingest/pipeline");
+        const row = await env.DB.prepare(`SELECT id FROM services WHERE base_url = ?1`).bind(body.base_url).first<{ id: string }>();
+        if (row) await ingestService(env, row.id);
+      })());
+      return json({ status: "indexed", service_id: id, verification: "queued" }, 201);
     }
     if (path === "/llms.txt") {
       const hits = await search(env, { q: "", aliveOnly: false, limit: 100 });
@@ -98,6 +125,27 @@ export default {
       const { curateFromLeaderboard } = await import("./ingest/curate");
       return json(await curateFromLeaderboard(env));
     }
+    if (path === "/services" || path === "/services/") {
+      const { servicesPage } = await import("./api/pages");
+      return servicesPage(env);
+    }
+    if (path.startsWith("/services/") && !path.includes(".")) {
+      const { serviceDetailPage } = await import("./api/pages");
+      return serviceDetailPage(env, path.slice("/services/".length).replace(/\/+$/, ""));
+    }
+    if (path === "/leaderboard") {
+      const { leaderboardPage } = await import("./api/pages");
+      return leaderboardPage(env);
+    }
+    if (path === "/reports/state-of-x402") {
+      const { stateReportPage } = await import("./api/pages");
+      return stateReportPage(env);
+    }
+    if (path === "/sitemap.xml") {
+      const { sitemapXml } = await import("./api/pages");
+      return sitemapXml(env);
+    }
+
     if (path === "/v1/sellers") {
       const rows = await env.DB.prepare(
         `SELECT address, settled_volume_usdc, settled_tx_count, unique_buyers, trust_score
