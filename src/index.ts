@@ -231,6 +231,46 @@ export default {
       return json({ ...(agent ? { agent_id: agent.id } : {}), ...decision });
     }
 
+    if (path === "/admin/outreach" && req.method === "POST") {
+      const token = url.searchParams.get("token");
+      if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
+      if (!env.EMAIL) return json({ error: "EMAIL binding unavailable" }, 500);
+      const b = (await req.json<Record<string, unknown>>().catch(() => ({}))) as {
+        to?: string; who?: string; apis?: number; vol?: number; trust?: number; rank?: number;
+      };
+      if (!b.to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.to)) return json({ error: "to (valid email) required" }, 400);
+      const subject = `Your ${b.apis ?? 13} APIs are ranked in the x402 Atlas index`;
+      const text = `Hi${b.who ? " " + b.who : ""},
+
+Your APIs (GridPulse, AirdropPulse, VetPulse and ${(b.apis ?? 13) - 3} others) are already indexed in x402 Atlas — the neutral discovery index agents search before paying per call.
+
+What we measured this week, on-chain:
+- Combined settled volume: $${b.vol ?? 562}
+- Best trust score: ${b.trust ?? 37}/100
+
+Why this matters: agents using Atlas (atlas.code402.dev) see your pricing, uptime, and trust score before they choose an endpoint. Your listings are already live — claiming them keeps pricing/uptime current and lets agents find you first.
+
+Claiming takes one line and is free:
+
+  curl -X POST https://atlas.code402.dev/v1/submit -H 'content-type: application/json'     -d '{"base_url":"https://your-api.com","title":"Your API"}'
+
+Or reply to this email and we'll set it up with you.
+
+— the x402 Atlas team (code402.dev)
+Run by JUANA LIMITED, Unit 7, Edison Building, Coventry CV1 4JA, UK
+
+You received this because your APIs appear in our public on-chain index.
+Reply "unsubscribe" to be excluded from future messages.`;
+      const html = `<div style="font-family:system-ui;max-width:560px"><p>Hi${b.who ? " " + b.who : ""},</p><p>Your APIs (<b>GridPulse, AirdropPulse, VetPulse</b> and ${(b.apis ?? 13) - 3} others) are already indexed in <a href="https://atlas.code402.dev">x402 Atlas</a> — the neutral discovery index agents search before paying per call.</p><p><b>What we measured this week, on-chain:</b></p><ul><li>Combined settled volume: <b>$${b.vol ?? 562}</b></li><li>Best trust score: <b>${b.trust ?? 37}/100</b></li></ul><p>Agents see your pricing, uptime, and trust score <i>before</i> choosing an endpoint. Your listings are live — claiming keeps them current.</p><pre style="background:#131a29;color:#8b95a8;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto">curl -X POST https://atlas.code402.dev/v1/submit -H 'content-type: application/json'   -d '{"base_url":"https://your-api.com","title":"Your API"}'</pre><p>Or just reply and we'll set it up with you.</p><p>— the x402 Atlas team (<a href="https://code402.dev">code402.dev</a>)<br><span style="color:#888;font-size:11px">Run by JUANA LIMITED, Unit 7, Edison Building, Coventry CV1 4JA, UK<br>You received this because your APIs appear in our public on-chain index. Reply "unsubscribe" to opt out.</span></p></div>`;
+      const r = await env.EMAIL.send({
+        to: b.to,
+        from: { email: "hello@code402.dev", name: "x402 Atlas" },
+        subject, text, html,
+        replyTo: "drjsarat@gmail.com",
+      });
+      return json({ sent: true, to: b.to, subject, messageId: (r as { messageId?: string })?.messageId ?? null });
+    }
+
     if (path === "/admin/kaizen") {
       const token = url.searchParams.get("token");
       if (!(await tokenOk(env, token))) return json({ error: "unauthorized" }, 401);
