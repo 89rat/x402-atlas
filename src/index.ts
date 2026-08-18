@@ -194,6 +194,23 @@ export default {
       return json({ ...(agent ? { agent_id: agent.id } : {}), ...decision });
     }
 
+    if (path === "/admin/kaizen") {
+      const token = url.searchParams.get("token");
+      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      const { dailyKaizen } = await import("./ingest/kaizen");
+      await dailyKaizen(env);
+      return json({ status: "snapshot taken" });
+    }
+    if (path === "/kaizen/daily") {
+      const rows = await env.DB.prepare(`SELECT * FROM metrics_daily ORDER BY day DESC LIMIT 30`).all();
+      return json({ kaizen: rows.results });
+    }
+    if (path === "/admin/bazaar") {
+      const token = url.searchParams.get("token");
+      if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
+      const { ingestBazaar } = await import("./ingest/bazaar");
+      return json(await ingestBazaar(env));
+    }
     if (path === "/admin/curate") {
       const token = url.searchParams.get("token");
       if (env.ADMIN_TOKEN && token !== env.ADMIN_TOKEN) return json({ error: "unauthorized" }, 401);
@@ -342,6 +359,17 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
       await ensureSeeds(env);
+      // Daily kaizen (02:00 UTC): bazaar ingestion + metrics snapshot
+      if (new Date().getUTCHours() === 2) {
+        try {
+          const { ingestBazaar } = await import("./ingest/bazaar");
+          await ingestBazaar(env);
+        } catch (e) { console.error("bazaar ingest failed", e); }
+        try {
+          const { dailyKaizen } = await import("./ingest/kaizen");
+          await dailyKaizen(env);
+        } catch (e) { console.error("kaizen snapshot failed", e); }
+      }
       // GDPR data minimization: purge anonymous search logs after 90 days
       await env.DB.prepare(`DELETE FROM search_log WHERE ts < ?1`).bind(Date.now() - 90 * 24 * 3600_000).run();
       // Weekly (Monday 03:00) re-curation from on-chain leaderboard
