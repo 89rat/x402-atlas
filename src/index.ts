@@ -9,10 +9,35 @@ import { handleMcp } from "./mcp/server";
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data, null, 2), { status, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } });
 
+/** Token-bucket rate limit per client IP (KV, 60s window). Public APIs only. */
+async function rateLimited(env: Env, req: Request, path: string): Promise<boolean> {
+  if (!path.startsWith("/v1/") && path !== "/mcp") return false;
+  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+  const key = `rl:${ip}:${Math.floor(Date.now() / 60_000)}`;
+  const n = Number((await env.CACHE.get(key)) ?? 0) + 1;
+  await env.CACHE.put(key, String(n), { expirationTtl: 90 });
+  return n > 120; // 120 req/min per IP
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    if (path === "/healthz") {
+      const db = await env.DB.prepare(`SELECT 1 AS ok`).first();
+      return json({ status: db ? "ok" : "degraded", ts: new Date().toISOString() });
+    }
+    if (path === "/security.txt" || path === "/.well-known/security.txt") {
+      return new Response(
+        `Contact: mailto:security@code402.dev\nExpires: 2027-08-18T00:00:00Z\nPreferred-Languages: en\nCanonical: https://atlas.code402.dev/.well-known/security.txt\n`,
+        { headers: { "content-type": "text/plain" } },
+      );
+    }
+
+    if (await rateLimited(env, req, path)) {
+      return json({ error: "RATE_LIMITED", window: "60s", limit: 120 }, 429);
+    }
 
     if (path === "/mcp" && req.method === "POST") return handleMcp(env, req);
 
