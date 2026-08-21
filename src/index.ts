@@ -250,7 +250,7 @@ export default {
     {
       const m = path.match(/^\/v1\/agent\/([^/]+)\/reputation$/);
       if (m && req.method === "GET") {
-        const id = decodeURIComponent(m[1]);
+        const id = decodeURIComponent(m[1] ?? "");
         try {
           const { issueCredential, verifyChain } = await import("./lib/reputation");
           const cred = await issueCredential(env, id);

@@ -215,7 +215,7 @@ export async function verifyCredential(env: Env, payload: string, signature: str
   const expires_at = Number(p[3]);
   const expired = Date.now() > expires_at;
   const fields = {
-    agent_id: p[1],
+    agent_id: p[1] ?? "",
     as_of: Number(p[2]),
     expires_at,
     settled_ok: Number(p[4]),
@@ -223,7 +223,7 @@ export async function verifyCredential(env: Env, payload: string, signature: str
     distinct_hosts: Number(p[6]),
     volume_units: Number(p[7]),
     head_seq: Number(p[10]),
-    head_hash: p[11],
+    head_hash: p[11] ?? "",
     reputation_score: Number(p[12]),
   };
   return { valid: !expired, signature_valid: true, expired, fields };
