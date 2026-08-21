@@ -1,4 +1,6 @@
-/** x402 Atlas — main Worker entry. */
+/** x402 Atlas — main Worker entry.
+ *  Integrated build: settlement terms + honest liveness (Layer 1),
+ *  accrued-state personalization (Layer 2), reputation rail (Layer 3). */
 import type { Env, QueueMessage } from "./lib/types";
 import { ensureSeeds, ingestService, runProbe } from "./ingest/pipeline";
 import { search } from "./api/search";
@@ -71,35 +73,70 @@ export default {
       return json(d);
     }
 
+    // ---- Search: settlement terms + honest liveness + per-agent personalization ----
     if (path === "/v1/search") {
       const q = url.searchParams.get("q") ?? "";
-      const chain = url.searchParams.get("chain") ?? undefined;
+      let chain = url.searchParams.get("chain") ?? undefined;
       const priceMaxUsd = url.searchParams.get("price_max_usd");
       const aliveOnly = url.searchParams.get("alive_only") !== "false";
+      let verifiedOnly = url.searchParams.get("verified_only") === "true";
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 25), 100);
 
-      const cacheKey = `search:${q}:${chain ?? ""}:${priceMaxUsd ?? ""}:${aliveOnly}:${limit}`;
-      const cached = await env.CACHE.get(cacheKey, "json");
-      if (cached) return json(cached);
+      // Retention layer: authenticated agents get their saved policy applied and
+      // results ranked by their own pay history. The anonymous path is unchanged.
+      const { authenticate } = await import("./api/agents");
+      const agent = await authenticate(env, req);
+      let priceMaxUnits = priceMaxUsd !== null ? Math.round(Number(priceMaxUsd) * 1e6) : undefined;
+      let policyApplied = false;
+      if (agent) {
+        const { loadDefaultPolicy } = await import("./api/personalize");
+        const pol = await loadDefaultPolicy(env, agent);
+        if (pol) {
+          policyApplied = true;
+          if (chain === undefined && pol.chain) chain = pol.chain;
+          if (priceMaxUnits === undefined && pol.price_ceiling_usd != null) priceMaxUnits = Math.round(pol.price_ceiling_usd * 1e6);
+          if (!verifiedOnly && pol.verified_only) verifiedOnly = true;
+        }
+      }
 
-      const hits = await search(env, {
-        q, chain,
-        priceMaxUnits: priceMaxUsd !== null ? Math.round(Number(priceMaxUsd) * 1e6) : undefined,
-        aliveOnly, limit,
-      });
+      const cacheKey = `search:${q}:${chain ?? ""}:${priceMaxUnits ?? ""}:${aliveOnly}:${verifiedOnly}:${limit}`;
+      // Shared cache is anonymous-only; personalized responses are never cached under it.
+      if (!agent) {
+        const cached = await env.CACHE.get(cacheKey, "json");
+        if (cached) return json(cached);
+      }
+
+      const hits = await search(env, { q, chain, priceMaxUnits, aliveOnly, verifiedOnly, limit });
 
       // Kaizen telemetry: log every search (incl. zero-result queries → demand signal)
       ctx.waitUntil(
         env.DB.prepare(
           `INSERT INTO search_log (ts, q, chain, price_max_units, alive_only, result_count, zero_results) VALUES (?1,?2,?3,?4,?5,?6,?7)`,
-        ).bind(Date.now(), q, chain ?? null, priceMaxUsd !== null ? Math.round(Number(priceMaxUsd) * 1e6) : null, aliveOnly ? 1 : 0, hits.length, hits.length === 0 ? 1 : 0).run(),
+        ).bind(Date.now(), q, chain ?? null, priceMaxUnits ?? null, aliveOnly ? 1 : 0, hits.length, hits.length === 0 ? 1 : 0).run(),
       );
 
       const totalRow = await env.DB.prepare(
         `SELECT COUNT(DISTINCT s.id) n FROM services s LEFT JOIN endpoints e ON e.service_id = s.id WHERE (?2 = 0 OR e.alive = 1)`,
       ).bind(aliveOnly ? 1 : 0, aliveOnly ? 1 : 0).first<{ n: number }>();
-      const payload = { query: { q, chain, price_max_usd: priceMaxUsd, alive_only: aliveOnly }, count: hits.length, total_matching_services: totalRow?.n ?? hits.length, results: hits };
-      ctx.waitUntil(env.CACHE.put(cacheKey, JSON.stringify(payload), { expirationTtl: 60 }));
+
+      let results: unknown = hits;
+      let personalization: Record<string, unknown> | undefined;
+      if (agent) {
+        const { experienceByHost, personalizeHits } = await import("./api/personalize");
+        const exp = await experienceByHost(env, agent);
+        const p = personalizeHits(hits, exp);
+        results = p.hits;
+        personalization = { agent_id: agent.id, policy_applied: policyApplied, preferred: p.applied.preferred, deprioritized: p.applied.deprioritized };
+      }
+
+      const payload = {
+        query: { q, chain, price_max_usd: priceMaxUsd, alive_only: aliveOnly, verified_only: verifiedOnly },
+        count: hits.length,
+        total_matching_services: totalRow?.n ?? hits.length,
+        ...(personalization ? { personalization } : {}),
+        results,
+      };
+      if (!agent) ctx.waitUntil(env.CACHE.put(cacheKey, JSON.stringify(payload), { expirationTtl: 60 }));
       return json(payload);
     }
 
@@ -115,10 +152,29 @@ export default {
     }
     if (path === "/v1/stats") {
       const s = await env.DB.prepare(`SELECT COUNT(*) AS services FROM services`).first();
-      const e = await env.DB.prepare(`SELECT COUNT(*) AS endpoints, SUM(alive) AS alive FROM endpoints WHERE last_probe_at IS NOT NULL`).first();
+      const e = await env.DB.prepare(
+        `SELECT COUNT(*) AS endpoints, SUM(alive) AS alive,
+                SUM(CASE WHEN evidence = 'probe' AND alive = 1 THEN 1 ELSE 0 END) AS probed_alive
+         FROM endpoints WHERE last_probe_at IS NOT NULL`,
+      ).first<{ endpoints: number; alive: number; probed_alive: number }>();
       const zeroQ = await env.DB.prepare(`SELECT COUNT(*) AS zero FROM search_log WHERE zero_results = 1`).first();
-      return json({ services: s?.services ?? 0, endpoints_probed: e?.endpoints ?? 0, alive: e?.alive ?? 0, zero_result_queries: zeroQ?.zero ?? 0 });
+      return json({
+        services: s?.services ?? 0,
+        endpoints_probed: e?.endpoints ?? 0,
+        alive: e?.alive ?? 0,               // any-evidence (probe OR catalog OR manifest) — back-compat
+        probed_alive: e?.probed_alive ?? 0, // directly observed a live 402 — the honest number
+        zero_result_queries: zeroQ?.zero ?? 0,
+      });
     }
+
+    // Reputation: seller-side verify (no secret needed — returns authenticated fields).
+    if (path === "/v1/reputation/verify" && req.method === "POST") {
+      const b = (await req.json<Record<string, unknown>>().catch(() => ({}))) as { payload?: string; signature?: string };
+      if (!b.payload || !b.signature) return json({ error: "payload and signature required" }, 400);
+      const { verifyCredential } = await import("./lib/reputation");
+      return json(await verifyCredential(env, b.payload, b.signature));
+    }
+
     if (path === "/v1/submit" && req.method === "POST") {
       const body = await req.json<{
         base_url?: string; title?: string; description?: string;
@@ -173,7 +229,7 @@ export default {
         "",
         "## API",
         "- GET /v1/search?q=web+search&chain=eip155:8453&price_max_usd=0.01 — ranked JSON results",
-        "- POST /mcp (MCP): tools search_x402, get_ecosystem_stats",
+        "- POST /mcp (MCP): tools search_x402, plan_purchase, report_outcome, get_my_reputation, get_ecosystem_stats",
         "",
         "## Services",
         ...hits.map((h) => `- [${h.title}](${h.baseUrl}${h.endpointPath}): $${h.priceMin ?? "?"}/call — ${h.description}`),
@@ -188,6 +244,25 @@ export default {
       const out = await registerAgent(env, body.label ?? "unnamed-agent");
       return json({ ...out, note: "Store this api_key now — it is never shown again. Use: Authorization: Bearer <key>" }, 201);
     }
+
+    // Public, seller-facing: an agent's signed reputation credential (no agent key).
+    // Integrity comes from the Atlas signature; add ?audit=1 for a full chain proof.
+    {
+      const m = path.match(/^\/v1\/agent\/([^/]+)\/reputation$/);
+      if (m && req.method === "GET") {
+        const id = decodeURIComponent(m[1]);
+        try {
+          const { issueCredential, verifyChain } = await import("./lib/reputation");
+          const cred = await issueCredential(env, id);
+          if (url.searchParams.get("audit") === "1") return json({ ...cred, chain_audit: await verifyChain(env, id) });
+          return json(cred);
+        } catch (e) {
+          if (e instanceof Error && e.message === "INVALID_AGENT_ID") return json({ error: "INVALID_AGENT_ID" }, 400);
+          throw e;
+        }
+      }
+    }
+
     if (path.startsWith("/v1/agent/")) {
       const { authenticate } = await import("./api/agents");
       const agent = await authenticate(env, req);
@@ -197,8 +272,8 @@ export default {
         return json(await agentProfile(env, agent));
       }
       if (path === "/v1/agent/attestation" && req.method === "GET") {
-        const { agentAttestation } = await import("./api/agents");
-        return json(await agentAttestation(env, agent));
+        const { issueCredential } = await import("./lib/reputation");
+        return json(await issueCredential(env, agent.id)); // signed, exportable, seller-verifiable
       }
       if (path === "/v1/agent/policies" && req.method === "POST") {
         const body = (await req.json<Record<string, unknown>>().catch(() => ({}))) as { name?: string; policy?: unknown };
@@ -207,28 +282,54 @@ export default {
         await savePolicy(env, agent, body.name, body.policy);
         return json({ status: "saved" }, 201);
       }
+      if (path === "/v1/agent/outcome" && req.method === "POST") {
+        const b = (await req.json<Record<string, unknown>>().catch(() => ({}))) as { endpoint_url?: string; ok?: boolean; amount_units?: number };
+        if (!b.endpoint_url || !/^https?:\/\//.test(b.endpoint_url)) return json({ error: "endpoint_url (http/https) required" }, 400);
+        const amountUnits = Number.isFinite(Number(b.amount_units)) ? Math.round(Number(b.amount_units)) : null;
+        const { recordOutcome } = await import("./api/personalize");
+        await recordOutcome(env, agent, { endpoint_url: b.endpoint_url, ok: Boolean(b.ok), amountUnits });
+        const { issueCredential } = await import("./lib/reputation");
+        const cred = await issueCredential(env, agent.id);
+        return json({ status: "recorded", outcome: b.ok ? "PAID_OK" : "PAID_FAIL", reputation: cred.summary }, 201);
+      }
       return json({ error: "NOT_FOUND" }, 404);
     }
 
     if (path === "/v1/plan") {
-      const body = await req.json<Record<string, unknown>>();
+      const rawBody = await req.json<Record<string, unknown>>();
+      const { authenticate, recordDecision } = await import("./api/agents");
+      const agent = await authenticate(env, req);
+
+      // Retention layer: fill omitted fields from the agent's saved default policy
+      // (explicit args still win), then annotate/adjust with its own outcome ledger.
+      const { loadDefaultPolicy, mergePolicyDefaults, experienceByHost, applyOutcomeDowngrade, hostOf } = await import("./api/personalize");
+      const pol = agent ? await loadDefaultPolicy(env, agent) : null;
+      const body = mergePolicyDefaults(pol, rawBody);
+
       const parsed = PlanInput.safeParse(body);
       if (!parsed.success) {
         return json({ error: "INVALID_INPUT", issues: parsed.error.issues }, 400);
       }
-      const decision = await planPurchase(env, parsed.data);
-      // Accumulate state: authenticated agents get decision history (retention §2.1.2)
-      const { authenticate, recordDecision } = await import("./api/agents");
-      const agent = await authenticate(env, req);
+      let decision = await planPurchase(env, parsed.data);
+
+      let yourHistory: unknown = null;
+      let reputation: unknown = undefined;
       if (agent) {
+        const exp = await experienceByHost(env, agent);
+        const host = hostOf(parsed.data.endpoint_url);
+        const e = host ? exp.get(host) ?? null : null;
+        yourHistory = e;
+        decision = applyOutcomeDowngrade(decision, e, pol);
         ctx.waitUntil(recordDecision(env, agent, {
           endpoint_url: decision.terms.endpoint_url,
           decision: decision.decision,
           reason_code: decision.reason_code,
           price_usd: decision.terms.price_usd,
         }));
+        const { reputationSummary } = await import("./lib/reputation");
+        reputation = await reputationSummary(env, agent.id);
       }
-      return json({ ...(agent ? { agent_id: agent.id } : {}), ...decision });
+      return json({ ...(agent ? { agent_id: agent.id, policy_applied: pol != null, your_history: yourHistory, reputation } : {}), ...decision });
     }
 
     if (path === "/admin/outreach" && req.method === "POST") {
@@ -400,7 +501,6 @@ Reply "unsubscribe" to be excluded from future messages.`;
     }
 
     // The full machine catalog: every indexed service, compact markdown.
-    // This is the document LLMs and RAG pipelines ingest wholesale.
     if (path === "/directory.md") {
       const hits = await search(env, { q: "", aliveOnly: false, limit: 500 });
       const md = [
@@ -408,7 +508,7 @@ Reply "unsubscribe" to be excluded from future messages.`;
         `> ${hits.length}+ payable endpoints for AI agents. Measured prices (hourly 402 probes), uptime, on-chain seller trust. Generated ${new Date().toISOString().slice(0, 10)}.`,
         "> Agents: search live via MCP (atlas.code402.dev/mcp) or GET /v1/search?q=. Sellers: claim your profile at /sellers/claim.",
         "",
-        ...hits.map((h) => `- **${h.title}** (${h.baseUrl}${h.endpointPath}) — $${h.priceMin ?? "?"}/call · trust ${h.sellerTrust}/100 · ${h.alive ? "verified" : "unverified"} — ${h.description}`),
+        ...hits.map((h) => `- **${h.title}** (${h.baseUrl}${h.endpointPath}) — $${h.priceMin ?? "?"}/call · trust ${h.sellerTrust}/100 · ${h.probedAlive ? "verified" : h.alive ? "asserted" : "unverified"} — ${h.description}`),
       ].join("\n");
       return new Response(md, { headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "public, max-age=3600" } });
     }
@@ -436,14 +536,29 @@ Reply "unsubscribe" to be excluded from future messages.`;
     if (path === "/openapi.json") {
       return json({
         openapi: "3.1.0",
-        info: { title: "x402 Atlas", version: "0.1.0", description: "Live, verified search + deterministic purchase policy for x402 machine-payable APIs. All money in 6-decimal integer USDC units." },
+        info: { title: "x402 Atlas", version: "0.1.0", description: "Live, verified search + deterministic purchase policy + agent reputation for x402 machine-payable APIs. All money in 6-decimal integer USDC units." },
         servers: [{ url: "https://atlas.code402.dev" }],
         paths: {
-          "/v1/search": { get: { summary: "Ranked search over verified x402 services", parameters: [{ name: "q", in: "query", schema: { type: "string" } }, { name: "price_max_usd", in: "query", schema: { type: "number" } }, { name: "alive_only", in: "query", schema: { type: "boolean", default: true } }] } },
-          "/v1/plan": { post: { summary: "Deterministic purchase gate: ACCEPT/REJECT/ESCALATE with policy checklist and surplus proof", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["endpoint_url"], properties: { endpoint_url: { type: "string", format: "uri" }, budget_usd: { type: "number" }, price_ceiling_usd: { type: "number" } } } } } } } },
+          "/v1/search": { get: {
+            summary: "Ranked search over indexed x402 services. Each result carries ready-to-pay settlement terms and an honest liveness tier. Send Authorization: Bearer <agent key> to personalize.",
+            parameters: [
+              { name: "q", in: "query", schema: { type: "string" } },
+              { name: "chain", in: "query", description: "CAIP-2 network filter, e.g. eip155:8453", schema: { type: "string" } },
+              { name: "price_max_usd", in: "query", schema: { type: "number" } },
+              { name: "alive_only", in: "query", description: "Any-evidence liveness (default true)", schema: { type: "boolean", default: true } },
+              { name: "verified_only", in: "query", description: "Only directly probe-observed live endpoints", schema: { type: "boolean", default: false } },
+              { name: "limit", in: "query", schema: { type: "integer", default: 25, maximum: 100 } },
+            ],
+          } },
+          "/v1/plan": { post: { summary: "Deterministic purchase gate: ACCEPT/REJECT/ESCALATE. Auth applies your saved policy + history.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["endpoint_url"], properties: { endpoint_url: { type: "string", format: "uri" }, budget_usd: { type: "number" }, price_ceiling_usd: { type: "number" } } } } } } } },
+          "/v1/agent/register": { post: { summary: "Register an agent; returns a bearer api_key (shown once)." } },
+          "/v1/agent/outcome": { post: { summary: "Report a pay outcome (ok true/false, optional amount_units) to your ledger + reputation chain. Auth: Bearer agent key.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["endpoint_url", "ok"], properties: { endpoint_url: { type: "string", format: "uri" }, ok: { type: "boolean" }, amount_units: { type: "integer" } } } } } } } },
+          "/v1/agent/attestation": { get: { summary: "Your signed, exportable reputation credential. Auth: Bearer agent key." } },
+          "/v1/agent/{id}/reputation": { get: { summary: "Public signed reputation credential for an agent (sellers read this). ?audit=1 adds a full chain proof.", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }] } },
+          "/v1/reputation/verify": { post: { summary: "Verify a reputation credential's Atlas signature + freshness without the secret; returns the authenticated fields.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["payload", "signature"], properties: { payload: { type: "string" }, signature: { type: "string" } } } } } } } },
           "/v1/fee/quote": { get: { summary: "Deterministic signed fee quote (expires in 300s)", parameters: [{ name: "notional_units", in: "query", schema: { type: "integer" } }, { name: "client", in: "query", schema: { type: "string" } }] } },
           "/v1/invite": { post: { summary: "Signed propagation invitation with verifiable economic surplus" } },
-          "/mcp": { post: { summary: "MCP server: search_x402, plan_purchase, get_ecosystem_stats" } },
+          "/mcp": { post: { summary: "MCP server: search_x402, plan_purchase, report_outcome, get_my_reputation, get_ecosystem_stats" } },
         },
       });
     }
@@ -465,7 +580,6 @@ Reply "unsubscribe" to be excluded from future messages.`;
       for (const t of targets) {
         const ing = await ingestService(env, t.id);
         const eps = await env.DB.prepare(`SELECT id FROM endpoints WHERE service_id = ?1`).bind(t.id).all<{ id: string }>();
-        let alive = 0;
         for (const e of eps.results) {
           await runProbe(env, t.id, e.id);
         }
@@ -491,9 +605,9 @@ Reply "unsubscribe" to be excluded from future messages.`;
           ["tollbooth", "https://tollbooth.code402.dev/healthz"],
         ];
         const failures: string[] = [];
-        for (const [name, url] of targets as [string, string][]) {
+        for (const [name, u] of targets as [string, string][]) {
           try {
-            const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+            const r = await fetch(u, { signal: AbortSignal.timeout(10_000) });
             if (r.status !== 200) failures.push(`${name}: HTTP ${r.status}`);
           } catch (e) {
             failures.push(`${name}: ${e instanceof Error ? e.message : "unreachable"}`);

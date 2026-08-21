@@ -92,6 +92,9 @@ export async function ingestService(env: Env, serviceId: string): Promise<{ upda
   return { updated: parsed !== null };
 }
 
+/** Evidence tier for how an endpoint's liveness/terms were established. */
+type Evidence = "probe" | "catalog" | "manifest" | "none";
+
 /** Run a probe and persist results + rolling uptime. */
 export async function runProbe(env: Env, serviceId: string, endpointId: string): Promise<void> {
   const row = await env.DB.prepare(
@@ -104,6 +107,11 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
 
   const { probeEndpoint } = await import("./prober");
   let result = await probeEndpoint(row.base_url, row.path, row.method, row.probe_body ?? undefined);
+
+  // Evidence tier: a direct probe that observed a live 402 is the gold standard.
+  // Fallbacks below downgrade the tier so `alive` never silently conflates
+  // observed liveness with catalog/manifest assertion.
+  let evidence: Evidence = result.ok ? "probe" : "none";
 
   // Fallback 0: catalog-verified (bazaar/leaderboard services whose endpoints
   // don't answer a bare GET with a clean 402 — auth-gated POSTs etc). The catalog
@@ -133,6 +141,7 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
           latencyMs: result.latencyMs,
           error: `catalog-verified (probe inconclusive: ${result.error ?? result.status})`,
         };
+        evidence = "catalog";
       }
     }
   }
@@ -170,6 +179,7 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
             latencyMs: result.latencyMs,
             error: "verified via x402.json manifest (direct challenge unreachable)",
           };
+          evidence = "manifest";
         }
       }
     } catch {
@@ -195,14 +205,16 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
     )
     .run();
 
-  // Recompute 7d uptime + latest terms
+  // Recompute 7d uptime + latest terms. Persist payTo + CAIP-2 network + evidence
+  // so search rows can carry a ready-to-pay quote and an honest liveness tier.
   await env.DB.prepare(
     `UPDATE endpoints SET
        alive = ?2, last_probe_at = ?3, last_latency_ms = ?4,
        price_min_units = COALESCE(?5, price_min_units), price_max_units = COALESCE(?6, price_max_units),
        paywall_scheme = COALESCE(?7, paywall_scheme), asset = COALESCE(?8, asset),
+       pay_to = COALESCE(?9, pay_to), network = COALESCE(?10, network), evidence = ?11,
        uptime_7d = (SELECT CAST(SUM(ok) AS REAL) / COUNT(*) FROM probes
-                    WHERE endpoint_id = ?1 AND ts > ?9),
+                    WHERE endpoint_id = ?1 AND ts > ?12),
        updated_at = ?3
      WHERE id = ?1`,
   )
@@ -215,6 +227,9 @@ export async function runProbe(env: Env, serviceId: string, endpointId: string):
       result.terms?.priceUnits.max ?? null,
       result.terms?.scheme ?? null,
       result.terms?.asset ?? null,
+      result.terms?.payTo ?? null,
+      result.terms?.network ?? null,
+      evidence,
       now - 7 * 24 * 3600 * 1000,
     )
     .run();
